@@ -1154,8 +1154,8 @@ def export_score_details(scored, path, llv_min, days_off_str, bid_period_label,
     usable_w = page_w - 2 * margin
 
     max_len = max((len(ln) for ln in lines if ln), default=80)
-    font_size = usable_w / (max_len * 0.6)
-    font_size = min(font_size, 11.0)
+    font_size = usable_w / (max_len * 0.522)
+    font_size = min(font_size, 12.65)
 
     line_h = font_size * 1.3
 
@@ -1212,8 +1212,8 @@ def export_to_pdf(scored: list, llv_min: int, days_off_str: str, bid_period_labe
 
     # Courier character width = 0.6 × font_size  (fixed-pitch)
     max_len = max((len(ln) for ln in lines if ln), default=80)
-    font_size = usable_w / (max_len * 0.6)
-    font_size = min(font_size, 14.0)   # sensible ceiling
+    font_size = usable_w / (max_len * 0.522)
+    font_size = min(font_size, 16.1)   # sensible ceiling
 
     line_h = font_size * 1.3
 
@@ -1277,8 +1277,8 @@ def export_trip_list_pdf(scored: list, trips_order: list, llv_min: int, days_off
     margin = 30.0
     usable_w = page_w - 2 * margin
     max_len = max((len(ln) for ln in lines if ln), default=80)
-    font_size = usable_w / (max_len * 0.6)
-    font_size = min(font_size, 14.0)
+    font_size = usable_w / (max_len * 0.522)
+    font_size = min(font_size, 16.1)
     line_h = font_size * 1.3
 
     c = rl_canvas.Canvas(filename, pagesize=landscape(letter))
@@ -1344,8 +1344,8 @@ def export_raw_trips_pdf(trips: dict, filename: str):
     margin = 30.0
     usable_w = page_w - 2 * margin
     max_len = max((len(ln) for ln in lines if ln), default=80)
-    font_size = usable_w / (max_len * 0.6)
-    font_size = min(font_size, 14.0)
+    font_size = usable_w / (max_len * 0.522)
+    font_size = min(font_size, 16.1)
     line_h = font_size * 1.3
 
     c = rl_canvas.Canvas(filename, pagesize=landscape(letter))
