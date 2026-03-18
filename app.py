@@ -134,6 +134,15 @@ def analyze():
         for rank_i, s in enumerate(sorted(scored, key=lambda x: x['score']), 1):
             s['rank'] = rank_i
 
+        # Attach raw leg/layover data for trip sheet display in the UI
+        for s in scored:
+            tn = s['trip_number']
+            s['_legs'] = list(legs.get(tn, []))
+            s['_layovers'] = list(layovers.get(tn, []))
+            raw = trips.get(tn, {})
+            s['total_pay'] = raw.get('total_pay', '')
+            s['total_block'] = raw.get('total_block', '')
+
         llv_d = max(1, int(llv_min / MIN_CREDIT_DAY_MIN))
         llv_thresholds = {
             n: min_to_hhmm(round(n * llv_min / llv_d))

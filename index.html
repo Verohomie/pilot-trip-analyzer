@@ -437,6 +437,17 @@ td {
 .ind-med  { background: rgba(245,158,11,.2); color: var(--warn2); }
 .ind-good { background: rgba(16,185,129,.2); color: var(--good2); }
 .ind-ok   { background: rgba(100,116,139,.15); color: var(--text2); }
+
+/* ── Trip Sheet (PDF-style itinerary) ── */
+.ts-sheet { font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.65; }
+.ts-header { font-weight: 700; color: var(--accent2); margin-bottom: 3px; }
+.ts-colhdr { color: var(--text3); font-size: 10px; border-bottom: 1px solid var(--border); padding-bottom: 2px; margin-bottom: 2px; white-space: pre; }
+.ts-divider { border-top: 1px solid var(--border); margin: 4px 0; }
+.ts-leg { white-space: pre; color: var(--text); }
+.ts-dh-row { white-space: pre; color: var(--text3); }
+.ts-lay { white-space: pre; color: var(--warn2); font-size: 10px; }
+.ts-totals { white-space: pre; color: var(--good2); font-weight: 700; margin-top: 2px; }
+.ts-pay { white-space: pre; color: var(--text2); font-size: 10px; }
 .bd-detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; }
 
 /* ── Excluded section ── */
@@ -1391,18 +1402,61 @@ function insertBreakdown(tr, s, scoreKey) {
     </div>`;
   }).join('');
 
-  const detailRows = [
-    ['Check-in',    s.check_in],
-    ['Check-out',   s.check_out],
-    ['Credit',      s.total_credit],
-    ['Real Credit', s.real_credit],
-    ['TAFB',        s.tafb],
-    ['Total Legs',  s.total_legs],
-    ['Avg Legs/Day', s.avg_daily_legs.toFixed(1)],
-    ['Trip Length', s.trip_length + ' days'],
-    ['Meets LLV',   s.meets_llv ? '✓ Yes' : '✗ No'],
-    ['Operates On', s.operates_on || '—'],
-  ].map(([k,v]) => `<div class="bd-row"><span class="bd-key">${k}</span><span class="bd-val">${v}</span></div>`).join('');
+  function renderTripSheet(s) {
+    function pad(v, w, right) {
+      v = String(v == null ? '' : v);
+      return right ? v.padStart(w) : v.padEnd(w);
+    }
+    const tripLegs = s._legs || [];
+    const tripLays = s._layovers || [];
+
+    // Group by trip_day
+    const dayLegs = {};
+    for (const leg of tripLegs) {
+      (dayLegs[leg.trip_day] = dayLegs[leg.trip_day] || []).push(leg);
+    }
+    for (const d of Object.keys(dayLegs)) {
+      dayLegs[d].sort((a, b) => +a.leg_seq - +b.leg_seq);
+    }
+    const dayLays = {};
+    for (const lay of tripLays) {
+      (dayLays[lay.trip_day] = dayLays[lay.trip_day] || []).push(lay);
+    }
+    const allDays = [...new Set([...Object.keys(dayLegs), ...Object.keys(dayLays)])].sort();
+
+    const lines = [];
+    lines.push(`<div class="ts-header">#${s.trip_number}  CHECK-IN AT ${s.check_in}  CHECK-OUT ${s.check_out}</div>`);
+    lines.push(`<div class="ts-colhdr">${pad('DAY',4)}${pad('FLT',6)}${pad('DEPARTS',10)}${pad('ARRIVES',10)}${pad('BLK',6)}TURN</div>`);
+    lines.push(`<div class="ts-divider"></div>`);
+
+    for (const day of allDays) {
+      let firstInDay = true;
+      for (const leg of (dayLegs[day] || [])) {
+        const isDH = leg.is_deadhead === 'True';
+        const dayLabel = isDH ? 'DH' : (firstInDay ? day : '');
+        firstInDay = false;
+        const cls = isDH ? 'ts-dh-row' : 'ts-leg';
+        const departs = leg.dep_city + ' ' + leg.dep_time;
+        const arrives = leg.arr_city + ' ' + leg.arr_time;
+        const row = pad(dayLabel, 4) + pad(leg.flight_num, 6) + pad(departs, 10) + pad(arrives, 10) + pad(leg.block_time || '--', 6) + (leg.turn_time || '');
+        lines.push(`<div class="${cls}">${row}</div>`);
+      }
+      for (const lay of (dayLays[day] || [])) {
+        const hotel = lay.hotel ? ' / ' + lay.hotel : '';
+        const row = pad('', 4) + pad(lay.airport, 6) + lay.layover_time + ' rest' + hotel;
+        lines.push(`<div class="ts-lay">${row}</div>`);
+      }
+    }
+
+    lines.push(`<div class="ts-divider"></div>`);
+    lines.push(`<div class="ts-totals">TOTAL CREDIT  ${pad(s.total_credit,6)}  TAFB  ${s.tafb}</div>`);
+    if (s.total_pay) {
+      lines.push(`<div class="ts-pay">TOTAL PAY     ${s.total_pay}</div>`);
+    }
+    lines.push(`<div class="ts-pay">${pad('Meets LLV',14)}${s.meets_llv ? '✓ Yes' : '✗ No'}   Operates On: ${s.operates_on || '—'}</div>`);
+
+    return `<div class="ts-sheet">${lines.join('')}</div>`;
+  }
 
   const btr = document.createElement('tr');
   btr.classList.add('breakdown-row');
@@ -1414,7 +1468,7 @@ function insertBreakdown(tr, s, scoreKey) {
       </div>
       <div class="bd-section">
         <h4>Trip Details</h4>
-        ${detailRows}
+        ${renderTripSheet(s)}
       </div>
     </div>
   </td>`;
