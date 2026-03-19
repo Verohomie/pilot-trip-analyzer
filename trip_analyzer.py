@@ -1296,8 +1296,10 @@ def export_trip_list_pdf(scored: list, trips_order: list, llv_min: int, days_off
     print(f"  Trip list PDF exported -> {filename}  ({font_size:.1f}pt Courier, landscape Letter)")
 
 
-def export_raw_trips_pdf(trips: dict, filename: str):
-    """Export the raw _trips.csv columns to a landscape PDF."""
+def export_combined_trips_pdf(trips: dict, scored: list, trips_order: list, llv_min: int,
+                               days_off_str: str, bid_period_label: str, month: int, year: int,
+                               filename: str):
+    """Export raw trips followed by scored trip list into a single landscape PDF."""
     try:
         from reportlab.lib.pagesizes import landscape, letter
         from reportlab.pdfgen import canvas as rl_canvas
@@ -1305,6 +1307,10 @@ def export_raw_trips_pdf(trips: dict, filename: str):
         print("  ✗  reportlab not installed. Run: pip install reportlab")
         return
 
+    generated_at = datetime.datetime.now().strftime('%A, %B %d, %Y  %I:%M %p')
+    SUBS = {'█': '#', '░': '.', '+': '+', '✓': '+', '⚠': '!', '✈': '>'}
+
+    # ── Section 1: Raw trips ──────────────────────────────────
     COLS = [
         ('TRIP',       'trip_number',   6),
         ('OPER ON',    'operates_on',  10),
@@ -1318,32 +1324,51 @@ def export_raw_trips_pdf(trips: dict, filename: str):
         ('TOTAL PAY',  'total_pay',    28),
     ]
 
-    generated_at = datetime.datetime.now().strftime('%A, %B %d, %Y  %I:%M %p')
-    lines = []
-    lines.append(HEADER)
-    lines.append(f"  RAW TRIPS  —  Generated: {generated_at}  |  {len(trips)} trips")
-    lines.append(HEADER)
-
-    header_row = '  ' + '  '.join(label.ljust(width) for label, _, width in COLS)
-    lines.append(header_row)
-    lines.append(SUBHEADER)
-
+    raw_lines = []
+    raw_lines.append(HEADER)
+    raw_lines.append(f"  RAW TRIPS  —  Generated: {generated_at}  |  {len(trips)} trips")
+    raw_lines.append(HEADER)
+    raw_lines.append('  ' + '  '.join(label.ljust(width) for label, _, width in COLS))
+    raw_lines.append(SUBHEADER)
     for row in trips.values():
-        cells = []
-        for _, key, width in COLS:
-            val = row.get(key, '').strip()
-            cells.append(val.ljust(width)[:width])
-        lines.append('  ' + '  '.join(cells))
+        cells = [row.get(key, '').strip().ljust(width)[:width] for _, key, width in COLS]
+        raw_lines.append('  ' + '  '.join(cells))
+    raw_lines.append(HEADER)
+    raw_lines = [''.join(SUBS.get(ch, ch) for ch in ln) for ln in raw_lines]
 
-    lines.append(HEADER)
+    # ── Section 2: Trip list ──────────────────────────────────
+    scored_map = {s['trip_number']: s for s in scored}
+    ordered = [scored_map[tn] for tn in trips_order if tn in scored_map]
+    month_name = calendar.month_name[month]
 
-    SUBS = {'█': '#', '░': '.', '✓': '+', '⚠': '!', '✈': '>'}
-    lines = [''.join(SUBS.get(ch, ch) for ch in ln) for ln in lines]
+    list_lines = []
+    list_lines.append(HEADER)
+    list_lines.append(f"  PILOT TRIP LIST  —  {month_name} {year}  |  Generated: {generated_at}")
+    list_lines.append(f"  LLV: {min_to_hhmm(llv_min)}  |  Bid period: {bid_period_label}  |  Days off: {days_off_str or 'None'}")
+    list_lines.append(f"  {len(ordered)} trips listed in bid package order  |  Rank: lower score = better")
+    list_lines.append(HEADER)
+    list_lines.append(f"  {'TRIP':>6}{'':1}  {'RK':>4}  {'LEN':>3}  {'SCORE':>6}  {'CREDIT':>6}  {'R.CR':>5}  "
+                      f"{'CHK-IN':>6}  {'CHK-OUT':>7}  {'TAFB':>6}  {'LGS':>4}  OPERATES ON")
+    list_lines.append(SUBHEADER)
+    for s in ordered:
+        llv_mark = '+' if s['meets_llv'] else ' '
+        list_lines.append(f"  {s['trip_number']:>6}{llv_mark}  {s['rank']:>4}  {s['trip_length']:>3}  "
+                          f"{s['score']:>6.1f}  {s['total_credit']:>6}  {s['real_credit']:>5}  "
+                          f"{s['check_in']:>6}  {s['check_out']:>7}  {s['tafb']:>6}  "
+                          f"{s['avg_daily_legs']:>4.1f}  {s['operates_on']}")
+    list_lines.append(HEADER)
+    list_lines.append("  LEGEND:  +: Meets LLV threshold  |  LGS: Avg legs/day  |  R.CR: Real Credit (over guarantee)")
+    list_lines.append("")
+    list_lines = [''.join(SUBS.get(ch, ch) for ch in ln) for ln in list_lines]
 
+    # ── Render both sections into one canvas ──────────────────
     page_w, page_h = landscape(letter)
     margin = 30.0
     usable_w = page_w - 2 * margin
-    max_len = max((len(ln) for ln in lines if ln), default=80)
+    max_len = max(
+        max((len(ln) for ln in raw_lines if ln), default=80),
+        max((len(ln) for ln in list_lines if ln), default=80),
+    )
     font_size = usable_w / (max_len * 0.522)
     font_size = min(font_size, 16.1)
     line_h = font_size * 1.3
@@ -1351,16 +1376,24 @@ def export_raw_trips_pdf(trips: dict, filename: str):
     c = rl_canvas.Canvas(filename, pagesize=landscape(letter))
     c.setFont('Courier', font_size)
     x = margin
-    y = page_h - margin
-    for line in lines:
-        if y < margin + line_h:
+
+    def draw_section(lines, start_new_page=False):
+        y = page_h - margin
+        if start_new_page:
             c.showPage()
             c.setFont('Courier', font_size)
-            y = page_h - margin
-        c.drawString(x, y, line)
-        y -= line_h
+        for line in lines:
+            if y < margin + line_h:
+                c.showPage()
+                c.setFont('Courier', font_size)
+                y = page_h - margin
+            c.drawString(x, y, line)
+            y -= line_h
+
+    draw_section(raw_lines, start_new_page=False)
+    draw_section(list_lines, start_new_page=True)
     c.save()
-    print(f"  Raw trips PDF exported -> {filename}  ({font_size:.1f}pt Courier, landscape Letter)")
+    print(f"  Combined trips PDF exported -> {filename}  ({font_size:.1f}pt Courier, landscape Letter)")
 
 
 # Main
@@ -1517,19 +1550,14 @@ def main():
                   top_n=args.top)
 
     # Derive default export filenames from bid period prefix
-    raw_trips_pdf_path = f'{bp_prefix}_trips.pdf' if bp_prefix else 'trips.pdf'
-    trip_list_pdf_path = f'{bp_prefix}_trip_list.pdf' if bp_prefix else 'trip_list.pdf'
+    combined_trips_pdf_path = f'{bp_prefix}_trips.pdf' if bp_prefix else 'trips.pdf'
     txt_path = f'{bp_prefix}-reasons.pdf'       if bp_prefix else ''
     pdf_path = f'{bp_prefix}-bid-analysis.pdf'  if bp_prefix else ''
 
-    # Raw trips PDF export (mirrors _trips.csv columns)
+    # Combined trips PDF export (raw trips + trip list in one file)
     if not args.no_export_raw_trips:
-        export_raw_trips_pdf(trips, raw_trips_pdf_path)
-
-    # Trip list PDF export (in input CSV order, with rank column)
-    if not args.no_export_csv:
-        export_trip_list_pdf(scored, list(trips.keys()), llv_min, args.days_off,
-                             bid_period_label, args.month, args.year, trip_list_pdf_path)
+        export_combined_trips_pdf(trips, scored, list(trips.keys()), llv_min, args.days_off,
+                                  bid_period_label, args.month, args.year, combined_trips_pdf_path)
 
     # PDF export (on by default when bid period given)
     if pdf_path and not args.no_export_pdf:
