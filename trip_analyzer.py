@@ -9,6 +9,8 @@ CHANGES: changed sit penalty logic and normalized penalty
 ===================
 
 Usage:
+    python3 trip_analyzer.py --llv 70:53 --bid-period 26apr is default for PDF output
+
     python3 trip_analyzer.py --llv 70:53 [--days-off 1,2,6,7,22-31] [--base-tz MST]
 
     python3 trip_analyzer.py --llv 70:53 \
