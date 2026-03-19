@@ -28,6 +28,27 @@
   --shadow:   0 4px 24px rgba(0,0,0,.5);
 }
 
+html.light {
+  --bg:       #f1f5f9;
+  --surf:     #ffffff;
+  --surf2:    #f8fafc;
+  --surf3:    #e2e8f0;
+  --border:   #cbd5e1;
+  --border2:  #94a3b8;
+  --text:     #0f172a;
+  --text2:    #475569;
+  --text3:    #94a3b8;
+  --accent:   #2563eb;
+  --accent2:  #1d4ed8;
+  --good:     #059669;
+  --good2:    #047857;
+  --warn:     #d97706;
+  --warn2:    #b45309;
+  --bad:      #dc2626;
+  --bad2:     #b91c1c;
+  --shadow:   0 4px 24px rgba(0,0,0,.1);
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -41,7 +62,7 @@ body {
 
 /* ── Header ── */
 header {
-  background: linear-gradient(135deg, #0d1526 0%, #111c35 50%, #0a1020 100%);
+  background: linear-gradient(135deg, var(--surf) 0%, var(--surf2) 50%, var(--bg) 100%);
   border-bottom: 1px solid var(--border);
   padding: 20px 28px 18px;
   display: flex;
@@ -293,7 +314,7 @@ th[data-tip-key]:hover { border-bottom-color: var(--accent2); }
 th.sort-asc::after  { content: ' ↑'; color: var(--accent2); }
 th.sort-desc::after { content: ' ↓'; color: var(--accent2); }
 tbody tr {
-  border-bottom: 1px solid rgba(45,55,72,.7);
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition: background .12s;
 }
@@ -307,7 +328,7 @@ td {
 
 /* ── Rank cell ── */
 .rank-cell { color: var(--text3); font-size: 11px; }
-.rank-cell.top { color: var(--warn2); font-weight: 700; }
+.rank-cell.top { color: var(--text3); }
 
 /* ── Score cell ── */
 .score-cell { font-weight: 700; }
@@ -383,7 +404,7 @@ td {
   padding-bottom: 4px;
 }
 .bd-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-radius: 4px; }
-.bd-row:hover { background: rgba(255,255,255,.04); }
+.bd-row:hover { background: var(--surf3); }
 .bd-key { color: var(--text2); cursor: help; border-bottom: 1px dashed var(--border2); }
 .bd-key:hover { color: var(--text); border-bottom-color: var(--accent2); }
 
@@ -391,7 +412,7 @@ td {
 #tooltip {
   position: fixed;
   z-index: 9999;
-  background: #1a2540;
+  background: var(--surf);
   border: 1px solid var(--accent);
   border-radius: 8px;
   padding: 10px 14px;
@@ -483,7 +504,7 @@ td {
   color: var(--text3);
   border-bottom: 1px solid var(--border);
 }
-.excl-table td { padding: 5px 10px; border-bottom: 1px solid rgba(45,55,72,.5); color: var(--text2); }
+.excl-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); color: var(--text2); }
 .reason-pill {
   display: inline-block;
   border-radius: 4px;
@@ -604,7 +625,7 @@ td {
 }
 .stat-modal-table td {
   padding: 6px 10px;
-  border-bottom: 1px solid rgba(45,55,72,.5);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 .stat-modal-table tr:hover td { background: var(--surf2); }
@@ -670,6 +691,40 @@ td {
   border-top: 1px solid var(--border);
   margin: 10px 0;
 }
+
+/* ── Theme toggle ── */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  margin-left: auto;
+  user-select: none;
+}
+.theme-toggle input { display: none; }
+.theme-toggle-track {
+  width: 36px;
+  height: 20px;
+  background: var(--surf3);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  position: relative;
+  transition: background .2s;
+}
+.theme-toggle input:checked + .theme-toggle-track { background: var(--accent); border-color: var(--accent); }
+.theme-toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  background: var(--text2);
+  border-radius: 50%;
+  transition: transform .2s, background .2s;
+}
+.theme-toggle input:checked + .theme-toggle-track .theme-toggle-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+.theme-toggle-label { font-size: 11px; color: var(--text2); }
 </style>
 </head>
 <body>
@@ -680,6 +735,13 @@ td {
     <h1>Pilot Trip Analyzer</h1>
     <p>Score and rank bid package trips by quality-of-life criteria</p>
   </div>
+  <label class="theme-toggle" title="Toggle light/dark theme">
+    <input type="checkbox" id="themeToggle" onchange="toggleTheme(this)">
+    <span class="theme-toggle-track">
+      <span class="theme-toggle-thumb"></span>
+    </span>
+    <span class="theme-toggle-label" id="themeLabel">Dark</span>
+  </label>
   <div class="badge" id="headerBadge">No data loaded</div>
 </header>
 
@@ -874,6 +936,22 @@ td {
 <div id="calPopup"></div>
 
 <script>
+// ── Theme toggle ───────────────────────────────────────────────────
+function toggleTheme(cb) {
+  const isLight = cb.checked;
+  document.documentElement.classList.toggle('light', isLight);
+  document.getElementById('themeLabel').textContent = isLight ? 'Light' : 'Dark';
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+}
+(function () {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.classList.add('light');
+    const cb = document.getElementById('themeToggle');
+    if (cb) { cb.checked = true; document.getElementById('themeLabel').textContent = 'Light'; }
+  }
+})();
+
 // ── Tooltip ────────────────────────────────────────────────────────
 const ttEl    = document.getElementById('tooltip');
 const ttTitle = document.getElementById('ttTitle');
