@@ -58,6 +58,174 @@ from typing import Optional
 import calendar
 import datetime
 
+# ─────────────────────────────────────────────────────────────
+# Scoring weight keys and defaults (1.0 = normal, 0 = off, 3.0 = 3×)
+# ─────────────────────────────────────────────────────────────
+
+WEIGHT_KEYS = [
+    ('early_flying',   'Early Flying Penalty'),
+    ('late_flying',    'Late Flying Penalty'),
+    ('legs',           'Legs Per Day'),
+    ('sit',            'Sit Time'),
+    ('weekend',        'Weekend Penalty'),
+    ('circadian',      'Circadian / Layover'),
+    ('fdp',            'FDP Penalty'),
+    ('length',         'Trip Length Bonus'),
+    ('llv_threshold',  'LLV Threshold Bonus'),
+    ('real_credit',    'Real Credit Bonus'),
+    ('tafb',           'TAFB Relative'),
+]
+
+WEIGHT_DEFAULTS = {k: 1.0 for k, _ in WEIGHT_KEYS}
+
+
+def launch_weight_gui(defaults: dict) -> dict:
+    """Open a browser-based weight panel. Returns weights dict or None if cancelled."""
+    import threading
+    import json
+    import webbrowser
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    slider_rows = ''
+    for key, label in WEIGHT_KEYS:
+        val = defaults.get(key, 1.0)
+        slider_rows += f"""
+        <div class="row">
+          <div class="row-header">
+            <span class="label">{label}</span>
+            <span class="val" id="val_{key}">{val:.2f}x</span>
+          </div>
+          <input type="range" min="0" max="3" step="0.05" value="{val}"
+                 id="{key}" oninput="upd('{key}')">
+          <div class="ticks"><span>0</span><span>1x</span><span>2x</span><span>3x</span></div>
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Scoring Weights</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, Helvetica, sans-serif; background: #f0f2f5;
+          display: flex; justify-content: flex-end; min-height: 100vh; }}
+  .panel {{ width: 400px; background: white; display: flex; flex-direction: column;
+            min-height: 100vh; box-shadow: -4px 0 20px rgba(0,0,0,.15); }}
+  .header {{ background: #1a2535; color: white; padding: 16px 18px 12px; }}
+  .header h2 {{ font-size: 17px; margin-bottom: 4px; }}
+  .header p {{ font-size: 12px; color: #aac4e8; }}
+  .sliders {{ flex: 1; overflow-y: auto; padding: 6px 0; }}
+  .row {{ padding: 8px 16px 4px; }}
+  .row:nth-child(even) {{ background: #f8f9fb; }}
+  .row-header {{ display: flex; justify-content: space-between; align-items: baseline;
+                 margin-bottom: 3px; }}
+  .label {{ font-size: 13px; font-weight: 600; color: #222; }}
+  .val {{ font-family: monospace; font-size: 13px; color: #2a5298; font-weight: 700;
+          min-width: 42px; text-align: right; }}
+  input[type=range] {{ width: 100%; accent-color: #2a5298; cursor: pointer; }}
+  .ticks {{ display: flex; justify-content: space-between; font-size: 10px;
+            color: #999; margin-top: 1px; padding: 0 2px; }}
+  .footer {{ padding: 12px 16px; border-top: 1px solid #e0e0e0; background: #f8f9fb;
+             display: flex; gap: 8px; }}
+  button {{ flex: 1; padding: 9px; border: none; border-radius: 6px;
+            font-size: 14px; cursor: pointer; font-weight: 600; }}
+  .btn-run {{ background: #2a5298; color: white; flex: 2; }}
+  .btn-run:hover {{ background: #1a3a78; }}
+  .btn-reset {{ background: #e8ecf2; color: #333; }}
+  .btn-cancel {{ background: #e8ecf2; color: #333; }}
+  #status {{ text-align: center; padding: 8px; font-size: 13px; color: #2a5298;
+             display: none; }}
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="header">
+    <h2>Scoring Weights</h2>
+    <p>0 = off &nbsp;&nbsp; 1.0 = normal &nbsp;&nbsp; 3.0 = 3x weight</p>
+  </div>
+  <div class="sliders">{slider_rows}</div>
+  <div id="status">Running analysis...</div>
+  <div class="footer">
+    <button class="btn-reset" onclick="reset()">Reset</button>
+    <button class="btn-cancel" onclick="cancel()">Cancel</button>
+    <button class="btn-run" onclick="run()">Run Analysis &gt;&gt;</button>
+  </div>
+</div>
+<script>
+const defaults = {json.dumps(defaults)};
+function upd(key) {{
+  const v = parseFloat(document.getElementById(key).value);
+  document.getElementById('val_' + key).textContent = v.toFixed(2) + 'x';
+}}
+function getWeights() {{
+  const w = {{}};
+  {'; '.join(f'w["{k}"] = parseFloat(document.getElementById("{k}").value)' for k, _ in WEIGHT_KEYS)};
+  return w;
+}}
+function reset() {{
+  for (const [k, v] of Object.entries(defaults)) {{
+    const el = document.getElementById(k);
+    if (el) {{ el.value = v; upd(k); }}
+  }}
+}}
+function run() {{
+  document.getElementById('status').style.display = 'block';
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  fetch('/run', {{method:'POST', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify(getWeights())}})
+  .then(() => window.close());
+}}
+function cancel() {{
+  fetch('/cancel', {{method:'POST'}}).then(() => window.close());
+}}
+</script>
+</body>
+</html>"""
+
+    weights_result = [None]
+    cancelled = [False]
+    done = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(html.encode('utf-8'))
+
+        def do_POST(self):
+            if self.path == '/run':
+                length = int(self.headers.get('Content-Length', 0))
+                data = json.loads(self.rfile.read(length))
+                weights_result[0] = data
+            else:
+                cancelled[0] = True
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+            done.set()
+
+        def log_message(self, *_):
+            pass  # silence HTTP logs
+
+    server = HTTPServer(('127.0.0.1', 0), Handler)
+    port = server.server_address[1]
+
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+
+    url = f'http://127.0.0.1:{port}'
+    print(f"  Opening weight panel at {url}")
+    webbrowser.open(url)
+
+    done.wait()
+    server.shutdown()
+
+    if cancelled[0] or weights_result[0] is None:
+        return None
+    return weights_result[0]
+
 
 # ─────────────────────────────────────────────────────────────
 # Time helpers  (times stored as decimal H.MM → minutes)
@@ -509,7 +677,8 @@ def days_touch_weekend(trip_row: dict, layovers_for_trip: list, trip_length: int
 
 def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
                llv_min: int, days_off: set, month: int, year: int,
-               bid_start: datetime.date = None, bid_end: datetime.date = None) -> Optional[dict]:
+               bid_start: datetime.date = None, bid_end: datetime.date = None,
+               weights: dict = None) -> Optional[dict]:
     """
     Compute a composite score for a trip. Lower raw penalty = better trip.
     Returns a dict with score breakdown or None if trip should be excluded.
@@ -730,6 +899,22 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
 
     # ── 13. Trip length bonus (prefer 1-day > 2-day > 3-day) ──
     length_bonus = {1: -40, 2: -20, 3: 0, 4: 20, 5: 40}.get(trip_len, 40)
+
+    # ── Apply scoring weights ─────────────────────────────────
+    w = weights or {}
+    def _w(key): return w.get(key, 1.0)
+
+    early_flying_penalty  *= _w('early_flying')
+    late_flying_penalty   *= _w('late_flying')
+    legs_penalty          *= _w('legs')
+    sit_penalty           *= _w('sit')
+    weekend_penalty       *= _w('weekend')
+    circadian_penalty     *= _w('circadian')
+    fdp_penalty           *= _w('fdp')
+    fdp_variance_penalty  *= _w('fdp')
+    length_bonus          *= _w('length')
+    surplus_bonus         *= _w('llv_threshold')
+    real_credit_bonus     *= _w('real_credit')
 
     # ── Composite score ───────────────────────────────────────
     total_penalty = (
@@ -1506,6 +1691,12 @@ def main():
                                llv_min, days_off, args.month, args.year, bid_start, bid_end)
         return
 
+    # Launch weight GUI (skipped in --detail mode above)
+    weights = launch_weight_gui(WEIGHT_DEFAULTS)
+    if weights is None:
+        print("  Cancelled.")
+        return
+
     # Score all trips
     print(f"  Scoring trips...")
     scored = []
@@ -1513,7 +1704,8 @@ def main():
     eliminated = 0
     for trip_number in trips:
         result = score_trip(trip_number, trips, legs, layovers,
-                            llv_min, days_off, args.month, args.year, bid_start, bid_end)
+                            llv_min, days_off, args.month, args.year, bid_start, bid_end,
+                            weights=weights)
         if result is None:
             eliminated += 1
         elif result.get('excluded'):
@@ -1526,6 +1718,7 @@ def main():
 
     # Compute TAFB min/max/midpoint per trip length and apply relative bonus/penalty (2-day+ only)
     TAFB_RELATIVE_MAX_PTS = 20  # ±20 pts across the full TAFB range within each length group
+    tafb_weight = weights.get('tafb', 1.0)
     for trip_len in range(2, 6):
         group = [s for s in scored if s['trip_length'] == trip_len]
         if not group:
@@ -1539,7 +1732,7 @@ def main():
                 tafb_relative = (s['tafb_min'] - mid_tafb) / tafb_range * (TAFB_RELATIVE_MAX_PTS * 2)
             else:
                 tafb_relative = 0.0
-            tafb_relative = round(tafb_relative, 1)
+            tafb_relative = round(tafb_relative * tafb_weight, 1)
             s['score'] = round(s['score'] + tafb_relative, 1)
             s['_breakdown']['tafb_relative'] = tafb_relative
 

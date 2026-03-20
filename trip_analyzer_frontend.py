@@ -18,6 +18,7 @@ from trip_analyzer import (
     parse_llv, load_trips, load_legs, load_layovers,
     score_trip, get_bid_period, parse_days_off,
     min_to_hhmm, MIN_CREDIT_DAY_MIN, BID_PERIOD_DATES,
+    WEIGHT_KEYS,
 )
 
 app = Flask(__name__)
@@ -102,11 +103,14 @@ def analyze():
         llv_min  = parse_llv(llv_str)
         days_off = parse_days_off(days_off_str, bid_start)
 
+        weights = {key: float(request.form.get(f'w_{key}', 1.0)) for key, _ in WEIGHT_KEYS}
+
         scored, excluded = [], []
         for trip_number in trips:
             result = score_trip(
                 trip_number, trips, legs, layovers,
                 llv_min, days_off, month, year, bid_start, bid_end,
+                weights=weights,
             )
             if result is None:
                 pass
@@ -117,6 +121,7 @@ def analyze():
 
         # TAFB relative score adjustment
         TAFB_MAX_PTS = 20
+        tafb_weight = weights.get('tafb', 1.0)
         for tl in range(2, 6):
             grp = [s for s in scored if s['trip_length'] == tl]
             if not grp:
@@ -127,7 +132,7 @@ def analyze():
             rng = hi - lo
             for s in grp:
                 adj = (s['tafb_min'] - mid) / rng * (TAFB_MAX_PTS * 2) if rng else 0.0
-                adj = round(adj, 1)
+                adj = round(adj * tafb_weight, 1)
                 s['score'] = round(s['score'] + adj, 1)
                 s['_breakdown']['tafb_relative'] = adj
 
