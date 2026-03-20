@@ -49,6 +49,7 @@ html.light {
   --shadow:   0 4px 24px rgba(0,0,0,.1);
 }
 
+html { zoom: 1.2; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -355,7 +356,7 @@ td {
 .score-bar-fill.bad  { background: linear-gradient(90deg, #b91c1c, var(--bad2)); }
 
 /* ── LLV mark ── */
-.llv-mark { color: var(--good2); font-size: 11px; }
+.llv-mark { color: #ff2222; font-size: 16px; font-weight: 900; }
 
 /* ── Trip len badge ── */
 .len-badge {
@@ -1070,14 +1071,17 @@ function showCalendarPopup(e, opStr) {
 }
 
 function posCalPopup(e) {
+  const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+  const vw = window.innerWidth  / zoom;
+  const vh = window.innerHeight / zoom;
   const pw = calPopupEl.offsetWidth  || 210;
   const ph = calPopupEl.offsetHeight || 180;
   const pad = 14;
   let x = e.clientX + pad;
   let y = e.clientY - ph / 2;
-  if (x + pw > window.innerWidth  - 8) x = e.clientX - pw - pad;
+  if (x + pw > vw - 8) x = e.clientX - pw - pad;
   if (y < 8) y = 8;
-  if (y + ph > window.innerHeight - 8) y = window.innerHeight - ph - 8;
+  if (y + ph > vh - 8) y = vh - ph - 8;
   calPopupEl.style.left = x + 'px';
   calPopupEl.style.top  = y + 'px';
 }
@@ -1321,8 +1325,8 @@ function applyFilter() {
     const scoreClass = pct > 65 ? 'good' : pct > 35 ? 'ok' : 'bad';
 
     const lenBadgeClass = s.trip_length >= 4 ? `l${s.trip_length}` : '';
-    const llvMark = s.meets_llv ? '<span class="llv-mark" title="Meets LLV threshold">✓</span>' : '';
-    const wePill = s.flies_on_weekend ? '<span class="we-pill">WE</span> ' : '';
+    const llvMark = s.meets_llv ? ' <span class="llv-mark" title="Meets LLV threshold">✓</span>' : '';
+
 
     const tr = document.createElement('tr');
     tr.dataset.idx = i;
@@ -1345,7 +1349,7 @@ function applyFilter() {
       <td>${s.check_out}</td>
       <td>${s.tafb}</td>
       <td>${s.avg_daily_legs.toFixed(1)}</td>
-      <td>${wePill}<span style="color:var(--text2)">${opOn || '—'}</span></td>
+      <td><span style="color:var(--text2)">${opOn || '—'}</span></td>
     `;
 
     tr.addEventListener('click', () => toggleBreakdown(tr, s, scoreKey));
@@ -1353,7 +1357,7 @@ function applyFilter() {
 
     // Calendar popup on the operates-on cell
     const opTd = tr.lastElementChild;
-    opTd.addEventListener('mouseenter', e => showCalendarPopup(e, s.operates_on));
+    opTd.addEventListener('mouseenter', e => showCalendarPopup(e, opOn));
     opTd.addEventListener('mouseleave', hideCalendarPopup);
 
     // If this was expanded, re-expand
@@ -1603,35 +1607,40 @@ function openStatModal(title, key) {
     head.innerHTML = `<tr>
       <th data-tip-key="rank">Rank</th><th data-tip-key="trip">Trip</th><th data-tip-key="len">Len</th><th data-tip-key="score">Score</th>
       <th data-tip-key="credit">Credit</th><th data-tip-key="rcr">R.CR</th><th data-tip-key="chkin">Chk-In</th><th data-tip-key="chkout">Chk-Out</th>
-      <th data-tip-key="tafb">TAFB</th><th data-tip-key="lgsd">Lgs/D</th><th data-tip-key="llv">LLV</th><th data-tip-key="we">WE</th><th data-tip-key="operates">Operates On</th>
+      <th data-tip-key="tafb">TAFB</th><th data-tip-key="lgsd">Lgs/D</th><th data-tip-key="llv">LLV</th><th data-tip-key="operates">Operates On</th>
       ${isExcluded === 'mixed' ? '<th>Status</th>' : ''}
     </tr>`;
-    body.innerHTML = trips.sort((a,b) => {
+    const modalScoreKey = key === 'weekend' ? 'score_weekend' : 'score';
+    body.innerHTML = '';
+    trips.sort((a,b) => {
       if (a.excluded && !b.excluded) return 1;
       if (!a.excluded && b.excluded) return -1;
       return (a.rank || 9999) - (b.rank || 9999);
-    }).map(s => {
+    }).forEach(s => {
+      const tr = document.createElement('tr');
       if (s.excluded) {
         const cls = s.reason.includes('Red') ? 'reason-redeye'
                   : s.reason.includes('Days') ? 'reason-daysoff' : 'reason-period';
-        return `<tr>
+        tr.innerHTML = `
           <td style="color:var(--text3)">—</td>
           <td><b>${s.trip_number}</b></td>
           <td colspan="10" style="color:var(--text3)">
             <span class="reason-pill ${cls}">${s.reason}</span>
             ${s.operates_on ? ' · ' + s.operates_on : ''}
           </td>
-          ${isExcluded === 'mixed' ? '<td><span class="reason-pill reason-redeye">Excluded</span></td>' : ''}
-        </tr>`;
+          ${isExcluded === 'mixed' ? '<td><span class="reason-pill reason-redeye">Excluded</span></td>' : ''}`;
+        body.appendChild(tr);
+        return;
       }
       const llvMark = s.meets_llv ? '<span class="llv-mark">✓</span>' : '—';
-      const weMark  = s.flies_on_weekend ? '<span class="we-pill">WE</span>' : '—';
+      const opOn = key === 'weekday' ? s.operates_on_weekday : key === 'weekend' ? s.operates_on_weekend : s.operates_on;
+      const displayScore = s[modalScoreKey];
       const rankCls = s.rank <= 10 ? 'top' : '';
-      return `<tr>
+      tr.innerHTML = `
         <td class="rank-cell ${rankCls}">${s.rank}</td>
         <td><b>${s.trip_number}</b></td>
         <td><span class="len-badge${s.trip_length>=4?` l${s.trip_length}`:''}">${s.trip_length}d</span></td>
-        <td style="font-weight:700">${s.score.toFixed(1)}</td>
+        <td style="font-weight:700">${displayScore.toFixed(1)}</td>
         <td>${s.total_credit}</td>
         <td style="color:${s.real_credit!=='—'?'var(--good2)':'var(--text3)'}">${s.real_credit}</td>
         <td>${s.check_in}</td>
@@ -1639,11 +1648,21 @@ function openStatModal(title, key) {
         <td>${s.tafb}</td>
         <td>${s.avg_daily_legs.toFixed(1)}</td>
         <td>${llvMark}</td>
-        <td>${weMark}</td>
-        <td style="color:var(--text2)">${s.operates_on || '—'}</td>
-        ${isExcluded === 'mixed' ? '<td style="color:var(--good2);font-size:10px">Scored</td>' : ''}
-      </tr>`;
-    }).join('');
+        <td style="color:var(--text2)">${opOn || '—'}</td>
+        ${isExcluded === 'mixed' ? '<td style="color:var(--good2);font-size:10px">Scored</td>' : ''}`;
+
+      // Calendar popup on Operates On cell
+      const opTd = tr.lastElementChild;
+      if (opOn) {
+        opTd.addEventListener('mouseenter', e => showCalendarPopup(e, opOn));
+        opTd.addEventListener('mouseleave', hideCalendarPopup);
+      }
+
+      // Score breakdown on click
+      tr.addEventListener('click', () => toggleBreakdown(tr, s, modalScoreKey));
+
+      body.appendChild(tr);
+    });
   }
 
   document.getElementById('statModal').classList.add('open');

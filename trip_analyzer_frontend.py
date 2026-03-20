@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flask web frontend for Pilot Trip Analyzer.
 
-Run:  python3 app.py
+Run:  python3 trip_analyzer_frontend.py
 Then open: http://localhost:5050
 """
 
