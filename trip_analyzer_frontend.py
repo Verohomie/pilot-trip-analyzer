@@ -11,7 +11,7 @@ import re
 import glob
 import calendar
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from trip_analyzer import (
@@ -37,7 +37,9 @@ def find_csv(suffix):
 
 @app.route('/')
 def index():
-    return send_file(os.path.join(HERE, 'index.html'))
+    resp = make_response(send_file(os.path.join(HERE, 'index.html')))
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @app.route('/files')

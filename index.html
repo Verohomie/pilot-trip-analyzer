@@ -564,31 +564,41 @@ td {
 #weightsOverlay.open { display: block; }
 #weightsFlyout {
   position: fixed; top: 0; right: 0;
-  width: 300px; height: 100vh;
+  width: 320px; top: 0; bottom: 20px; height: auto;
   background: var(--surf);
   border-left: 1px solid var(--border);
   box-shadow: -8px 0 40px rgba(0,0,0,.6);
   z-index: 4000;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; overflow: hidden;
   transform: translateX(100%);
   transition: transform .25s ease;
 }
 #weightsFlyout.open { transform: translateX(0); }
 .wf-header {
-  padding: 14px 16px 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--surf2);
-  display: flex; justify-content: space-between; align-items: flex-start;
   flex-shrink: 0;
 }
-.wf-header-text h3 { font-size: 13px; font-weight: 700; color: var(--text); }
-.wf-header-text p  { font-size: 10px; color: var(--text3); margin-top: 2px; }
-.wf-close {
-  background: none; border: 1px solid var(--border); border-radius: 5px;
-  color: var(--text2); cursor: pointer; padding: 1px 8px; font-size: 14px; line-height: 1.4;
+.wf-header-row1 {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;
 }
-.wf-close:hover { color: var(--text); border-color: var(--border2); }
-.wf-sliders { flex: 1; overflow-y: auto; }
+.wf-header-row1 h3 { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.wf-header-row1 .wf-btns { display: flex; gap: 6px; }
+.wf-header p { font-size: 10px; color: var(--text3); white-space: nowrap; }
+.wf-apply {
+  background: var(--accent); border: none; border-radius: 6px;
+  color: #fff; cursor: pointer; padding: 3px 12px; font-size: 11px;
+  font-weight: 700; font-family: inherit;
+}
+.wf-apply:hover { opacity: .85; }
+.wf-btn-reset {
+  padding: 3px 10px; background: var(--surf3); border: 1px solid var(--border2);
+  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 11px; cursor: pointer;
+}
+.wf-btn-reset:hover { background: var(--surf2); }
+.wf-sliders { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.wf-row:last-child { padding-bottom: 32px; }
 .wf-row { padding: 8px 14px 5px; }
 .wf-row:nth-child(even) { background: var(--surf2); }
 .wf-row-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
@@ -596,15 +606,6 @@ td {
 .wf-val   { font-size: 11px; font-weight: 700; color: var(--accent2); font-family: monospace; min-width: 36px; text-align: right; }
 .wf-slider { width: 100%; accent-color: var(--accent); cursor: pointer; margin: 0; }
 .wf-ticks { display: flex; justify-content: space-between; font-size: 9px; color: var(--text3); padding: 0 1px; }
-.wf-footer {
-  padding: 10px 14px; border-top: 1px solid var(--border);
-  background: var(--surf2); display: flex; gap: 8px; flex-shrink: 0;
-}
-.wf-btn-reset {
-  flex: 1; padding: 7px; background: var(--surf3); border: 1px solid var(--border2);
-  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 12px; cursor: pointer;
-}
-.wf-btn-reset:hover { background: var(--surf2); }
 .btn-weights {
   background: var(--surf2); border: 1px solid var(--border2); border-radius: 8px;
   padding: 9px 16px; color: var(--text2); font-family: inherit; font-size: 13px;
@@ -1118,16 +1119,16 @@ td {
 <div id="weightsOverlay" onclick="closeWeights()"></div>
 <div id="weightsFlyout">
   <div class="wf-header">
-    <div class="wf-header-text">
+    <div class="wf-header-row1">
       <h3>⚖ Scoring Weights</h3>
-      <p>0 = off &nbsp; 1.0 = normal &nbsp; 3.0 = 3x</p>
+      <div class="wf-btns">
+        <button class="wf-btn-reset" onclick="resetWeights()">Reset</button>
+        <button class="wf-apply" onclick="closeWeights()">Apply</button>
+      </div>
     </div>
-    <button class="wf-close" onclick="closeWeights()">✕</button>
+    <p>0 = off &nbsp; 1.0 = normal &nbsp; 3.0 = 3x</p>
   </div>
   <div class="wf-sliders" id="wfSliders"></div>
-  <div class="wf-footer">
-    <button class="wf-btn-reset" onclick="resetWeights()">Reset to Defaults</button>
-  </div>
 </div>
 
 <script>
@@ -1684,6 +1685,9 @@ const weightsState = Object.fromEntries(WEIGHT_KEYS.map(([k]) => [k, 1.0]));
       <div class="wf-ticks"><span>0</span><span>1x</span><span>2x</span><span>3x</span></div>`;
     container.appendChild(row);
   });
+  const spacer = document.createElement('div');
+  spacer.style.height = '40px';
+  container.appendChild(spacer);
 })();
 
 function updateWeight(key, val) {
@@ -1707,6 +1711,11 @@ function resetWeights() {
 function openWeights()  {
   document.getElementById('weightsFlyout').classList.add('open');
   document.getElementById('weightsOverlay').classList.add('open');
+  requestAnimationFrame(() => {
+    const hdr = document.querySelector('.wf-header');
+    const sl  = document.getElementById('wfSliders');
+    if (hdr && sl) sl.style.maxHeight = (window.innerHeight - hdr.offsetHeight) + 'px';
+  });
 }
 function closeWeights() {
   document.getElementById('weightsFlyout').classList.remove('open');

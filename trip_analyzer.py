@@ -107,14 +107,20 @@ def launch_weight_gui(defaults: dict) -> dict:
 <title>Scoring Weights</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  html, body {{ height: 100%; }}
   body {{ font-family: -apple-system, Helvetica, sans-serif; background: #f0f2f5;
-          display: flex; justify-content: flex-end; min-height: 100vh; }}
+          display: flex; justify-content: flex-end; height: 100vh; overflow: hidden; }}
   .panel {{ width: 400px; background: white; display: flex; flex-direction: column;
-            min-height: 100vh; box-shadow: -4px 0 20px rgba(0,0,0,.15); }}
-  .header {{ background: #1a2535; color: white; padding: 16px 18px 12px; }}
-  .header h2 {{ font-size: 17px; margin-bottom: 4px; }}
+            height: 100vh; box-shadow: -4px 0 20px rgba(0,0,0,.15); }}
+  .header {{ background: #1a2535; color: white; padding: 14px 18px 10px; flex-shrink: 0; }}
+  .header-top {{ display: flex; justify-content: space-between; align-items: center;
+                 margin-bottom: 4px; }}
+  .header h2 {{ font-size: 17px; }}
   .header p {{ font-size: 12px; color: #aac4e8; }}
-  .sliders {{ flex: 1; overflow-y: auto; padding: 6px 0; }}
+  .btn-apply-header {{ background: #2a5298; color: white; border: none; border-radius: 6px;
+                       padding: 6px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }}
+  .btn-apply-header:hover {{ background: #1a3a78; }}
+  .sliders {{ flex: 1; overflow-y: auto; padding: 6px 0; min-height: 0; }}
   .row {{ padding: 8px 16px 4px; }}
   .row:nth-child(even) {{ background: #f8f9fb; }}
   .row-header {{ display: flex; justify-content: space-between; align-items: baseline;
@@ -126,29 +132,28 @@ def launch_weight_gui(defaults: dict) -> dict:
   .ticks {{ display: flex; justify-content: space-between; font-size: 10px;
             color: #999; margin-top: 1px; padding: 0 2px; }}
   .footer {{ padding: 12px 16px; border-top: 1px solid #e0e0e0; background: #f8f9fb;
-             display: flex; gap: 8px; }}
+             display: flex; gap: 8px; flex-shrink: 0; }}
   button {{ flex: 1; padding: 9px; border: none; border-radius: 6px;
             font-size: 14px; cursor: pointer; font-weight: 600; }}
-  .btn-run {{ background: #2a5298; color: white; flex: 2; }}
-  .btn-run:hover {{ background: #1a3a78; }}
   .btn-reset {{ background: #e8ecf2; color: #333; }}
-  .btn-cancel {{ background: #e8ecf2; color: #333; }}
+  .btn-reset:hover {{ background: #d8dce6; }}
   #status {{ text-align: center; padding: 8px; font-size: 13px; color: #2a5298;
-             display: none; }}
+             display: none; flex-shrink: 0; }}
 </style>
 </head>
 <body>
 <div class="panel">
   <div class="header">
-    <h2>Scoring Weights</h2>
+    <div class="header-top">
+      <h2>&#9878; Scoring Weights</h2>
+      <button class="btn-apply-header" onclick="run()">Apply</button>
+    </div>
     <p>0 = off &nbsp;&nbsp; 1.0 = normal &nbsp;&nbsp; 3.0 = 3x weight</p>
   </div>
   <div class="sliders">{slider_rows}</div>
   <div id="status">Running analysis...</div>
   <div class="footer">
-    <button class="btn-reset" onclick="reset()">Reset</button>
-    <button class="btn-cancel" onclick="cancel()">Cancel</button>
-    <button class="btn-run" onclick="run()">Run Analysis &gt;&gt;</button>
+    <button class="btn-reset" onclick="reset()">Reset to Default</button>
   </div>
 </div>
 <script>
