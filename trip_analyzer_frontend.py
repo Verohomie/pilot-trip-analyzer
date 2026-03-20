@@ -157,6 +157,7 @@ def analyze():
             'llv_thresholds':   llv_thresholds,
             'bid_period_label': bid_period_label,
             'days_off':         days_off_str,
+            'bid_start':        bid_start.isoformat(),
             'total_trips':      len(trips),
             'top_n':            top_n,
             'files': {

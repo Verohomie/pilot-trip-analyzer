@@ -693,6 +693,54 @@ td {
   margin: 10px 0;
 }
 
+/* ── Days-Off Picker Popup ── */
+#dofPicker {
+  position: fixed;
+  z-index: 3000;
+  background: var(--surf);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.7);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+  font-size: 12px;
+  min-width: 196px;
+}
+#dofPicker.visible { opacity: 1; pointer-events: auto; }
+.dof-picker-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px; font-weight: 700; font-size: 12px; color: var(--text);
+}
+.dof-picker-close {
+  background: none; border: none; color: var(--text2); cursor: pointer;
+  font-size: 13px; padding: 0 2px; line-height: 1;
+}
+.dof-picker-close:hover { color: var(--text); }
+.dof-picker-footer {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;
+}
+.dof-clear-btn, .dof-done-btn {
+  background: var(--surf3); border: 1px solid var(--border2); border-radius: 5px;
+  color: var(--text); padding: 4px 12px; cursor: pointer;
+  font-family: inherit; font-size: 11px;
+}
+.dof-done-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.dof-done-btn:hover { opacity: .88; }
+.dof-clear-btn:hover { background: var(--surf2); }
+.cal-day.dof-day { cursor: pointer; }
+.cal-day.dof-day:hover:not(.out-of-period) { background: var(--surf3); }
+.cal-day.out-of-period { opacity: .22; cursor: default; }
+.dof-cal-btn {
+  background: none; border: none; cursor: pointer; color: var(--accent2);
+  font-size: 15px; padding: 0 4px; line-height: 1; vertical-align: middle;
+  flex-shrink: 0;
+}
+.dof-cal-btn:hover { color: var(--text); }
+.dof-input-wrap { display: flex; gap: 4px; align-items: center; }
+.dof-input-wrap input { flex: 1; }
+
 /* ── Theme toggle ── */
 .theme-toggle {
   display: flex;
@@ -786,7 +834,10 @@ td {
         </div>
         <div class="field">
           <label>Days Off</label>
-          <input type="text" name="days_off" placeholder="1,2,6,7,22-31">
+          <div class="dof-input-wrap">
+            <input type="text" name="days_off" placeholder="1,2,6,7,22-31">
+            <button type="button" class="dof-cal-btn" title="Pick days from calendar" onclick="openDaysOffPicker(this)">📅</button>
+          </div>
         </div>
         <div class="field">
           <label>Bid Period</label>
@@ -834,6 +885,7 @@ td {
     <div class="tabs">
       <button class="tab active" onclick="switchTab('weekday')" id="tabWeekday">Weekday Trips</button>
       <button class="tab" onclick="switchTab('weekend')" id="tabWeekend">Weekend Trips</button>
+      <button class="tab" onclick="switchTab('combined')" id="tabCombined">Combined Trips</button>
     </div>
 
     <!-- Filter row -->
@@ -935,6 +987,7 @@ td {
 
 <div id="tooltip"><div class="tt-title" id="ttTitle"></div><div class="tt-body" id="ttBody"></div><div class="tt-calc" id="ttCalc"></div></div>
 <div id="calPopup"></div>
+<div id="dofPicker"></div>
 
 <script>
 // ── Theme toggle ───────────────────────────────────────────────────
@@ -1011,7 +1064,226 @@ document.addEventListener('mouseout', e => {
 const calPopupEl = document.getElementById('calPopup');
 let calMonth = 4;
 let calYear  = 2026;
-let calDaysOff = new Set(); // day numbers that are days off
+let calDaysOff = new Set(); // Set of 'YYYY-MM-DD' strings — days off
+let calBidStart = null;     // Date object for bid period start
+
+// Mirror of Python BID_PERIOD_DATES: { name: [sm,sd,em,ed] }
+const BID_PERIOD_DATES_JS = {
+  'january':   [1,  1,  1, 30],
+  'february':  [1, 31,  3,  1],
+  'march':     [3,  2,  3, 31],
+  'april':     [4,  1,  5,  1],
+  'may':       [5,  2,  6,  1],
+  'june':      [6,  2,  7,  1],
+  'july':      [7,  2,  7, 31],
+  'august':    [8,  1,  8, 30],
+  'september': [8, 31,  9, 30],
+  'october':   [10, 1, 10, 31],
+  'november':  [11, 1, 11, 30],
+  'december':  [12, 1, 12, 31],
+};
+const MONTH_NAMES_LOWER_JS = ['','january','february','march','april','may','june',
+  'july','august','september','october','november','december'];
+const MONTH_ABBR_JS = ['','jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+// Parse days-off string to a Set of 'YYYY-MM-DD' strings, mirroring Python parse_days_off.
+// Uses "wrap on decrease" logic: whenever a number <= the previous number, advances to next month.
+function parseDaysOffToDates(s, bidStart) {
+  const dates = new Set();
+  if (!s || !bidStart) return dates;
+  let curYear  = bidStart.getFullYear();
+  let curMonth = bidStart.getMonth() + 1; // 1-based
+  let lastNum  = -1;
+  function advanceMonth() {
+    curMonth++; if (curMonth > 12) { curMonth = 1; curYear++; }
+  }
+  function addDay(d) {
+    const dt = new Date(curYear, curMonth - 1, d);
+    if (dt.getMonth() + 1 === curMonth) {
+      dates.add(`${curYear}-${String(curMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+    }
+  }
+  for (const part of s.split(',')) {
+    const p = part.trim();
+    if (!p) continue;
+    if (p.includes('-')) {
+      const [loS, hiS] = p.split('-');
+      const lo = parseInt(loS), hi = parseInt(hiS);
+      if (isNaN(lo) || isNaN(hi)) continue;
+      if (lastNum >= 0 && lo <= lastNum) advanceMonth();
+      for (let d = lo; d <= hi; d++) addDay(d);
+      lastNum = hi;
+    } else {
+      const n = parseInt(p);
+      if (isNaN(n)) continue;
+      if (lastNum >= 0 && n <= lastNum) advanceMonth();
+      addDay(n);
+      lastNum = n;
+    }
+  }
+  return dates;
+}
+
+// Serialize a Set of 'YYYY-MM-DD' strings back to compact days-off string.
+// Groups by month in order, compresses consecutive days into ranges.
+function datesSetToString(isoSet) {
+  if (!isoSet || !isoSet.size) return '';
+  const sorted = [...isoSet].sort();
+  const groups = [];
+  let curG = null;
+  for (const iso of sorted) {
+    const [y, m, d] = iso.split('-').map(Number);
+    if (!curG || curG.y !== y || curG.m !== m) { curG = { y, m, days: [] }; groups.push(curG); }
+    curG.days.push(d);
+  }
+  const parts = [];
+  for (const g of groups) {
+    let i = 0;
+    while (i < g.days.length) {
+      let j = i;
+      while (j + 1 < g.days.length && g.days[j+1] === g.days[j] + 1) j++;
+      parts.push(j > i ? `${g.days[i]}-${g.days[j]}` : String(g.days[i]));
+      i = j + 1;
+    }
+  }
+  return parts.join(',');
+}
+
+// Compute bid start/end dates from the current form field values.
+function getBidPeriodFromForm() {
+  const bidPeriodStr = (document.querySelector('[name=bid_period]').value || '').trim();
+  let year  = parseInt(document.querySelector('[name=year]').value)  || 2026;
+  let month = parseInt(document.querySelector('[name=month]').value) || 4;
+  let bpName = MONTH_NAMES_LOWER_JS[month] || 'april';
+  if (bidPeriodStr) {
+    const m = bidPeriodStr.match(/^(\d{2})([a-zA-Z]{3,})$/);
+    if (m) {
+      year = 2000 + parseInt(m[1]);
+      const abbr = m[2].toLowerCase().slice(0,3);
+      const mi = MONTH_ABBR_JS.indexOf(abbr);
+      if (mi > 0) { month = mi; bpName = MONTH_NAMES_LOWER_JS[month]; }
+    } else {
+      const lower = bidPeriodStr.toLowerCase().slice(0,3);
+      for (const k of Object.keys(BID_PERIOD_DATES_JS)) {
+        if (k.startsWith(lower)) { bpName = k; break; }
+      }
+    }
+  }
+  const dates = BID_PERIOD_DATES_JS[bpName];
+  if (!dates) return null;
+  const [sm, sd, em, ed] = dates;
+  return {
+    start: new Date(year, sm - 1, sd),
+    end:   new Date(year, em - 1, ed),
+    year,
+  };
+}
+
+// ── Days-Off Picker ────────────────────────────────────────────────
+let dofPickerSelected = new Set(); // Set of 'YYYY-MM-DD'
+let dofPickerBidStart = null;
+let dofPickerBidEnd   = null;
+
+function openDaysOffPicker(btn) {
+  const bp = getBidPeriodFromForm();
+  if (!bp) return;
+  dofPickerBidStart = bp.start;
+  dofPickerBidEnd   = bp.end;
+  const inputVal = document.querySelector('[name=days_off]').value.trim();
+  dofPickerSelected = parseDaysOffToDates(inputVal, bp.start);
+  renderDofPicker();
+  const popup = document.getElementById('dofPicker');
+  popup.classList.add('visible');
+  // Position below button, clamped to viewport
+  const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+  const rect = btn.getBoundingClientRect();
+  let x = rect.left / zoom;
+  let y = rect.bottom / zoom + 4;
+  // Defer clamping until rendered
+  requestAnimationFrame(() => {
+    const pw = popup.offsetWidth  || 210;
+    const ph = popup.offsetHeight || 320;
+    const vw = window.innerWidth  / zoom;
+    const vh = window.innerHeight / zoom;
+    if (x + pw > vw - 8) x = vw - pw - 8;
+    if (y + ph > vh - 8) y = vh - ph - 8;
+    if (x < 8) x = 8;
+    popup.style.left = x + 'px';
+    popup.style.top  = y + 'px';
+  });
+}
+
+function closeDofPicker() {
+  document.getElementById('dofPicker').classList.remove('visible');
+}
+
+function clearDofPicker() {
+  dofPickerSelected.clear();
+  document.querySelector('[name=days_off]').value = '';
+  renderDofPicker();
+}
+
+function renderDofPicker() {
+  const sm = dofPickerBidStart.getMonth() + 1;
+  const sy = dofPickerBidStart.getFullYear();
+  const em = dofPickerBidEnd.getMonth() + 1;
+  const ey = dofPickerBidEnd.getFullYear();
+  const months = [{ m: sm, y: sy }];
+  if (em !== sm || ey !== sy) {
+    let nm = sm + 1, ny = sy;
+    if (nm > 12) { nm = 1; ny++; }
+    months.push({ m: nm, y: ny });
+  }
+  let html = `<div class="dof-picker-header"><span>Select Days Off</span><button class="dof-picker-close" onclick="closeDofPicker()">✕</button></div>`;
+  for (let i = 0; i < months.length; i++) {
+    if (i > 0) html += '<div class="cal-separator"></div>';
+    html += buildDofPickerMonth(months[i].m, months[i].y);
+  }
+  html += `<div class="dof-picker-footer"><button class="dof-clear-btn" onclick="clearDofPicker()">Clear</button><button class="dof-done-btn" onclick="closeDofPicker()">Done</button></div>`;
+  document.getElementById('dofPicker').innerHTML = html;
+}
+
+function buildDofPickerMonth(month, year) {
+  const firstDow    = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let html = `<div class="cal-month-label">${CAL_MONTH_NAMES[month]} ${year}</div><div class="cal-grid">`;
+  CAL_DAY_HEADERS.forEach(d => { html += `<div class="cal-hdr">${d}</div>`; });
+  for (let i = 0; i < firstDow; i++) html += '<div class="cal-day"></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dt  = new Date(year, month - 1, d);
+    const inBp = dt >= dofPickerBidStart && dt <= dofPickerBidEnd;
+    const isOff = dofPickerSelected.has(iso);
+    let cls = 'cal-day dof-day';
+    if (!inBp)  cls += ' out-of-period';
+    if (isOff)  cls += ' off';
+    html += `<div class="${cls}" data-iso="${iso}"${inBp ? '' : ' data-disabled="1"'}>${d}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// Delegate clicks inside the picker
+document.getElementById('dofPicker').addEventListener('click', e => {
+  const day = e.target.closest('.dof-day');
+  if (!day || day.dataset.disabled) return;
+  const iso = day.dataset.iso;
+  if (dofPickerSelected.has(iso)) {
+    dofPickerSelected.delete(iso);
+    day.classList.remove('off');
+  } else {
+    dofPickerSelected.add(iso);
+    day.classList.add('off');
+  }
+  document.querySelector('[name=days_off]').value = datesSetToString(dofPickerSelected);
+});
+
+// Close picker on outside click
+document.addEventListener('click', e => {
+  const picker = document.getElementById('dofPicker');
+  if (!picker.classList.contains('visible')) return;
+  if (!picker.contains(e.target) && !e.target.closest('.dof-cal-btn')) closeDofPicker();
+});
 
 const CAL_MONTH_NAMES = ['','January','February','March','April','May','June',
   'July','August','September','October','November','December'];
@@ -1026,7 +1298,9 @@ function buildCalendarHTML(month, year, highlightSet, offSet) {
   for (let i = 0; i < firstDow; i++) html += '<div class="cal-day"></div>';
   for (let d = 1; d <= daysInMonth; d++) {
     const hi  = highlightSet && highlightSet.has(d);
-    const off = offSet && offSet.has(d);
+    // offSet is a Set of 'YYYY-MM-DD' strings
+    const iso = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const off = offSet && offSet.has(iso);
     const cls = (hi ? ' highlight' : '') + (off ? ' off' : '');
     html += `<div class="cal-day${cls}">${d}</div>`;
   }
@@ -1052,6 +1326,8 @@ function parseOperatesOnForCal(opStr) {
   return { m1, m2, wrapped };
 }
 
+let calPopupCellRect = null; // bounding rect of the hovered cell, for X anchoring
+
 function showCalendarPopup(e, opStr) {
   if (!opStr || opStr === '—') return;
   const parsed = parseOperatesOnForCal(opStr);
@@ -1062,24 +1338,29 @@ function showCalendarPopup(e, opStr) {
     let nm = calMonth + 1, ny = calYear;
     if (nm > 12) { nm = 1; ny++; }
     html += '<div class="cal-separator"></div>';
-    // days-off typically only in first month for bid period
-    html += buildCalendarHTML(nm, ny, parsed.m2, null);
+    html += buildCalendarHTML(nm, ny, parsed.m2, calDaysOff);
   }
   calPopupEl.innerHTML = html;
   calPopupEl.classList.add('visible');
+  // Capture the cell rect for stable X anchoring
+  calPopupCellRect = e.currentTarget.getBoundingClientRect();
   posCalPopup(e);
 }
 
 function posCalPopup(e) {
   const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
-  const vw = window.innerWidth  / zoom;
   const vh = window.innerHeight / zoom;
+  const vw = window.innerWidth  / zoom;
   const pw = calPopupEl.offsetWidth  || 210;
   const ph = calPopupEl.offsetHeight || 180;
-  const pad = 14;
-  let x = e.clientX + pad;
-  let y = e.clientY - ph / 2;
-  if (x + pw > vw - 8) x = e.clientX - pw - pad;
+  const pad = 10;
+  // X: anchor to the LEFT edge of the cell so calendar sits over the table body
+  const cellLeft = calPopupCellRect ? calPopupCellRect.left / zoom : e.clientX / zoom;
+  let x = cellLeft - pw - pad;
+  if (x < 8) x = (calPopupCellRect ? calPopupCellRect.right / zoom : e.clientX / zoom) + pad;
+  if (x + pw > vw - 8) x = vw - pw - 8;
+  // Y: follow mouse, centered vertically
+  let y = e.clientY / zoom - ph / 2;
   if (y < 8) y = 8;
   if (y + ph > vh - 8) y = vh - ph - 8;
   calPopupEl.style.left = x + 'px';
@@ -1169,20 +1450,9 @@ function renderResults(data) {
   // Capture month/year for calendar popup
   calMonth = parseInt(document.querySelector('[name=month]').value) || 4;
   calYear  = parseInt(document.querySelector('[name=year]').value)  || 2026;
-  // Parse days-off into a Set of day numbers for calendar highlighting
-  calDaysOff = new Set();
-  if (days_off) {
-    days_off.split(',').forEach(part => {
-      part = part.trim();
-      if (part.includes('-')) {
-        const [lo, hi] = part.split('-').map(Number);
-        for (let d = lo; d <= hi; d++) calDaysOff.add(d);
-      } else {
-        const n = parseInt(part);
-        if (!isNaN(n)) calDaysOff.add(n);
-      }
-    });
-  }
+  // Parse days-off into date-aware Set of 'YYYY-MM-DD' strings using bid_start from server
+  calBidStart = data.bid_start ? new Date(data.bid_start + 'T00:00:00') : null;
+  calDaysOff  = parseDaysOffToDates(days_off, calBidStart);
 
   // Header badge
   document.getElementById('headerBadge').textContent =
@@ -1224,8 +1494,9 @@ function renderResults(data) {
   `;
 
   // Tab counts
-  document.getElementById('tabWeekday').textContent = `Weekday Trips (${weekday.length})`;
-  document.getElementById('tabWeekend').textContent = `Weekend Trips (${weekend.length})`;
+  document.getElementById('tabWeekday').textContent  = `Weekday Trips (${weekday.length})`;
+  document.getElementById('tabWeekend').textContent  = `Weekend Trips (${weekend.length})`;
+  document.getElementById('tabCombined').textContent = `Combined Trips (${scored.length})`;
 
   // Excluded
   document.getElementById('excludedCount').textContent = `(${excluded.length})`;
@@ -1246,6 +1517,7 @@ function renderResults(data) {
   currentTab = 'weekday';
   document.getElementById('tabWeekday').classList.add('active');
   document.getElementById('tabWeekend').classList.remove('active');
+  document.getElementById('tabCombined').classList.remove('active');
   sortCol = 'score'; sortDir = 1;
   applyFilter();
 }
@@ -1253,8 +1525,9 @@ function renderResults(data) {
 // ── Tab switch ─────────────────────────────────────────────────────
 function switchTab(tab) {
   currentTab = tab;
-  document.getElementById('tabWeekday').classList.toggle('active', tab === 'weekday');
-  document.getElementById('tabWeekend').classList.toggle('active', tab === 'weekend');
+  document.getElementById('tabWeekday').classList.toggle('active',  tab === 'weekday');
+  document.getElementById('tabWeekend').classList.toggle('active',  tab === 'weekend');
+  document.getElementById('tabCombined').classList.toggle('active', tab === 'combined');
   expandedRow = null;
   applyFilter();
 }
@@ -1280,9 +1553,9 @@ function applyFilter() {
   const llvF = document.getElementById('filterLlv').value;
 
   // Source rows for this tab
-  let rows = currentTab === 'weekday'
-    ? scored.filter(s => s.operates_on_weekday !== '—')
-    : scored.filter(s => s.flies_on_weekend);
+  let rows = currentTab === 'weekday'  ? scored.filter(s => s.operates_on_weekday !== '—')
+           : currentTab === 'weekend'  ? scored.filter(s => s.flies_on_weekend)
+           : scored.slice(); // combined = all scored trips
 
   // Apply filters
   if (text) rows = rows.filter(s =>
@@ -1294,7 +1567,7 @@ function applyFilter() {
   if (llvF === 'no')  rows = rows.filter(s => !s.meets_llv);
 
   // Sort
-  const scoreKey = currentTab === 'weekday' ? 'score' : 'score_weekend';
+  const scoreKey = currentTab === 'weekend' ? 'score_weekend' : 'score';
   rows.sort((a, b) => {
     let av = a[sortCol === 'score' ? scoreKey : sortCol];
     let bv = b[sortCol === 'score' ? scoreKey : sortCol];
@@ -1317,7 +1590,9 @@ function applyFilter() {
 
   rows.forEach((s, i) => {
     const displayScore = s[scoreKey];
-    const opOn = currentTab === 'weekday' ? s.operates_on_weekday : s.operates_on_weekend;
+    const opOn = currentTab === 'weekday'  ? s.operates_on_weekday
+               : currentTab === 'weekend' ? s.operates_on_weekend
+               : s.operates_on;
 
     // Bar fill (lower score = bigger fill = better)
     const pct = maxS > minS ? Math.round((1 - (displayScore - minS) / (maxS - minS)) * 100) : 50;
