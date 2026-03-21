@@ -74,6 +74,7 @@ WEIGHT_KEYS = [
     ('llv_threshold',  'LLV Threshold Bonus'),
     ('real_credit',    'Real Credit Bonus'),
     ('tafb',           'TAFB Relative'),
+    ('deadhead',       'Dead Head Penalty'),
 ]
 
 WEIGHT_DEFAULTS = {k: 1.0 for k, _ in WEIGHT_KEYS}
@@ -905,6 +906,15 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
     # ── 13. Trip length bonus (prefer 1-day > 2-day > 3-day) ──
     length_bonus = {1: -40, 2: -20, 3: 0, 4: 20, 5: 40}.get(trip_len, 40)
 
+    # ── 14. Dead head penalty ─────────────────────────────────
+    # 5 pts per hour of dead head block time across the entire trip
+    dh_total_min = sum(
+        hhmm_to_min(leg.get('block_time', '0'))
+        for leg in all_legs_list
+        if leg.get('is_deadhead') == 'True'
+    )
+    deadhead_penalty = (dh_total_min / 60) * 5
+
     # ── Apply scoring weights ─────────────────────────────────
     w = weights or {}
     def _w(key): return w.get(key, 1.0)
@@ -920,6 +930,7 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
     length_bonus          *= _w('length')
     surplus_bonus         *= _w('llv_threshold')
     real_credit_bonus     *= _w('real_credit')
+    deadhead_penalty      *= _w('deadhead')
 
     # ── Composite score ───────────────────────────────────────
     total_penalty = (
@@ -935,6 +946,7 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
         + circadian_penalty
         + length_bonus
         + real_credit_bonus
+        + deadhead_penalty
     )
     # score_weekend adds the weekend penalty only when trip is evaluated in a weekend context
     score_weekend = total_penalty + weekend_penalty
@@ -972,6 +984,7 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
             'weekend': round(weekend_penalty, 1),
             'circadian': round(circadian_penalty, 1),
             'real_credit_bonus': round(real_credit_bonus, 1),
+            'deadhead': round(deadhead_penalty, 1),
         }
     }
 

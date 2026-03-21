@@ -951,7 +951,7 @@ td {
     <h1>Pilot Trip Analyzer</h1>
     <p>Score and rank bid package trips by quality-of-life criteria</p>
   </div>
-  <div style="margin-left:auto; font-size:11px; color:var(--text3);">v1.2.4</div>
+  <div style="margin-left:auto; font-size:11px; color:var(--text3);">v1.2.5</div>
   <div style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-left:auto;">
     <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);">Display Mode</span>
     <label class="theme-toggle" title="Toggle light/dark theme" style="margin-left:0;">
@@ -1794,6 +1794,7 @@ const WEIGHT_KEYS = [
   ['llv_threshold', 'LLV Threshold Bonus'],
   ['real_credit',   'Real Credit Bonus'],
   ['tafb',          'TAFB Relative'],
+  ['deadhead',      'Dead Head Penalty'],
 ];
 const weightsState = Object.fromEntries(WEIGHT_KEYS.map(([k]) => [k, 1.0]));
 
@@ -2181,6 +2182,12 @@ function insertBreakdown(tr, s, scoreKey) {
       'Real credit is pay above the minimum guarantee — essentially free money. Trips with more real credit are actively rewarded with a score reduction.',
       '−5 pts per hour of real credit (r.cr hrs × 5)',
     ],
+    deadhead: [
+      'Dead head penalty',
+      'Dead Head Penalty',
+      'Dead head legs are flights where you ride as a passenger in uniform — you\'re not flying, but you\'re still away from home and on duty. This penalty discourages trips that rely heavily on dead heading.',
+      '+5 pts per hour of dead head block time',
+    ],
   };
 
   function indicator(v) {
@@ -2206,6 +2213,7 @@ function insertBreakdown(tr, s, scoreKey) {
     weekend:          'weekend',
     circadian:        'circadian',
     real_credit_bonus:'real_credit',
+    deadhead:         'deadhead',
   };
 
   const breakdownRows = Object.entries(LABELS).map(([k, meta]) => {
