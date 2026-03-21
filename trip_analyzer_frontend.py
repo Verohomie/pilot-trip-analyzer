@@ -80,7 +80,8 @@ def upload_csv():
 
         os.makedirs(CSV_DIR, exist_ok=True)
         for f, name in file_map.values():
-            f.save(os.path.join(CSV_DIR, name.upper()))
+            base, ext = os.path.splitext(name)
+            f.save(os.path.join(CSV_DIR, base.upper() + ext.lower()))
 
         trips_name = file_map['trips'][1]
         bid_period = re.match(r'^(.+)_trips\.csv$', trips_name, re.IGNORECASE).group(1).upper()
