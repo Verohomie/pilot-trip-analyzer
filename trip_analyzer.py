@@ -825,7 +825,7 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
             sit_part = [p for p in pay_str.split() if 'SIT' in p][0]
             sit_val = sit_part.replace('SIT', '')
             sit_min_parsed = hhmm_to_min(sit_val)
-            sit_penalty += sit_min_parsed * 0.25
+            sit_penalty += sit_min_parsed * 0.5
         except:
             pass
 
