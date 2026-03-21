@@ -122,6 +122,48 @@ header p  { color: var(--text2); font-size: 11px; margin-top: 2px; }
 .file-chip-name  { color: var(--good2); font-weight: 600; }
 .file-chip-name.missing { color: var(--bad2); }
 
+/* ── Drop zone ── */
+.drop-zone {
+  grid-column: 1 / -1;
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--surf2);
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(59,130,246,.07);
+}
+.drop-zone.upload-ok {
+  border-color: rgba(16,185,129,.5);
+  background: rgba(16,185,129,.05);
+}
+.drop-zone.upload-err {
+  border-color: rgba(239,68,68,.5);
+}
+.dz-icon { font-size: 22px; flex-shrink: 0; }
+.dz-text { flex: 1; }
+.dz-text strong { display: block; font-size: 11px; color: var(--text); }
+.dz-text span   { font-size: 10px; color: var(--text3); }
+.dz-btn {
+  font-size: 10px;
+  font-family: inherit;
+  background: var(--surf3);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--text2);
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dz-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── Settings row ── */
 .settings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: end; }
 .field label {
@@ -490,6 +532,7 @@ td {
 .ts-lay { white-space: pre; color: var(--warn2); font-size: 10px; }
 .ts-totals { white-space: pre; color: var(--good2); font-weight: 700; margin-top: 2px; }
 .ts-pay { white-space: pre; color: var(--text2); font-size: 10px; }
+.ts-pay-total { white-space: pre; color: #1a5fa8; font-weight: 700; font-size: 12px; }
 .bd-detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; }
 
 /* ── Excluded section ── */
@@ -929,6 +972,18 @@ td {
 
       <!-- Single unified grid: chips row + settings rows -->
       <div class="settings-grid" id="fileStatusBar">
+
+        <!-- Drop zone -->
+        <div class="drop-zone" id="dropZone">
+          <span class="dz-icon" id="dzIcon">📂</span>
+          <div class="dz-text">
+            <strong id="dzTitle">Drop 3 CSV files here</strong>
+            <span id="dzSub">trips · legs · layovers — produced by airline_pdf_to_csv.py</span>
+          </div>
+          <button type="button" class="dz-btn" id="dzBrowseBtn">Browse…</button>
+          <input type="file" id="dzFilePicker" multiple accept=".csv" style="display:none">
+        </div>
+
         <div class="file-chip" id="chipTrips">
           <span class="file-chip-icon">📋</span>
           <div class="file-chip-info">
@@ -1638,9 +1693,12 @@ async function detectFiles() {
       ['legs',     'chipLegs',  'chipLegsName'],
       ['layovers', 'chipLay',   'chipLayName'],
     ];
+    let allOk = true;
     map.forEach(([key, chipId, nameId]) => {
       const chip = document.getElementById(chipId);
       const name = document.getElementById(nameId);
+      chip.classList.remove('ok', 'err');
+      name.classList.remove('missing');
       if (f[key]) {
         chip.classList.add('ok');
         name.textContent = f[key];
@@ -1648,11 +1706,79 @@ async function detectFiles() {
         chip.classList.add('err');
         name.classList.add('missing');
         name.textContent = 'Not found';
+        allOk = false;
       }
     });
+    if (allOk) {
+      dzSetOk('CSVs loaded — ready to analyze');
+    }
   } catch { /* server not ready yet */ }
 }
 detectFiles();
+
+// ── Drop zone ─────────────────────────────────────────────────────
+const dropZone   = document.getElementById('dropZone');
+const dzPicker   = document.getElementById('dzFilePicker');
+const dzIcon     = document.getElementById('dzIcon');
+const dzTitle    = document.getElementById('dzTitle');
+const dzSub      = document.getElementById('dzSub');
+
+document.getElementById('dzBrowseBtn').addEventListener('click', () => dzPicker.click());
+dzPicker.addEventListener('change', e => handleDzFiles(e.target.files));
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  handleDzFiles(e.dataTransfer.files);
+});
+
+function dzSetOk(msg) {
+  dropZone.classList.remove('upload-err');
+  dropZone.classList.add('upload-ok');
+  dzIcon.textContent  = '✅';
+  dzTitle.textContent = msg;
+  dzSub.textContent   = 'Drop new files here to replace';
+}
+
+function dzSetErr(msg) {
+  dropZone.classList.remove('upload-ok');
+  dropZone.classList.add('upload-err');
+  dzIcon.textContent  = '⚠️';
+  dzTitle.textContent = msg;
+  dzSub.textContent   = 'trips · legs · layovers';
+}
+
+async function handleDzFiles(files) {
+  const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+  if (csvFiles.length !== 3) {
+    dzSetErr(`Need exactly 3 CSV files — got ${csvFiles.length}`);
+    return;
+  }
+
+  dzIcon.textContent  = '⏳';
+  dzTitle.textContent = 'Uploading…';
+  dzSub.textContent   = csvFiles.map(f => f.name).join('  ·  ');
+  dropZone.classList.remove('upload-ok', 'upload-err');
+
+  const fd = new FormData();
+  csvFiles.forEach(f => fd.append('files', f));
+
+  try {
+    const res  = await fetch('/upload_csv', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      dzSetOk(`${data.bid_period} uploaded`);
+      detectFiles();  // refresh the status chips
+    } else {
+      dzSetErr(data.error || 'Upload failed');
+    }
+  } catch (err) {
+    dzSetErr('Upload error: ' + err.message);
+  }
+  dzPicker.value = '';  // allow re-selecting same files
+}
 
 // ── Weights flyout ─────────────────────────────────────────────────
 const WEIGHT_KEYS = [
@@ -2010,7 +2136,7 @@ function insertBreakdown(tr, s, scoreKey) {
       'FDP penalty',
       'Flight Duty Period Penalty',
       'Penalizes trips with long or uneven duty days. A high average FDP means less rest between legs. Uneven FDPs across days (e.g. one brutal day, one easy day) add a variance penalty.',
-      'Avg FDP &gt; 8 hrs: +5 pts/hr over 8 &nbsp;|&nbsp; Variance: +2 pts per std-dev hr',
+      'Avg FDP &gt; 8 hrs: +20 pts/hr over 8 &nbsp;|&nbsp; Variance: +2 pts per std-dev hr',
     ],
     early_flying: [
       'Early flying penalty',
@@ -2152,7 +2278,7 @@ function insertBreakdown(tr, s, scoreKey) {
     lines.push(`<div class="ts-divider"></div>`);
     lines.push(`<div class="ts-totals">TOTAL CREDIT  ${pad(s.total_credit,6)}  TAFB  ${s.tafb}</div>`);
     if (s.total_pay) {
-      lines.push(`<div class="ts-pay">TOTAL PAY     ${s.total_pay}</div>`);
+      lines.push(`<div class="ts-pay-total">TOTAL PAY     ${s.total_pay}</div>`);
     }
     lines.push(`<div class="ts-pay">${pad('Meets LLV',14)}${s.meets_llv ? '✓ Yes' : '✗ No'}   Operates On: ${s.operates_on || '—'}</div>`);
 

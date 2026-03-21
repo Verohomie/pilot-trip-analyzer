@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv*/
+env/
+
+# macOS
+.DS_Store
+
+# Large local-only folders
+PDFs/
+ARCHIVE/
+SCREEN GRABS/
+23M7/
+OBS CSVs/
+
+# Secrets / credentials
+credentials.json
+*.json.bak
+token.pickle
+.env
+.env.*
+
+# Generated files
+*.pdf
+pdslcr.*
+
+# Node (just in case)
+node_modules/

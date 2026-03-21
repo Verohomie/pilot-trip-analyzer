@@ -762,7 +762,7 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
     fdp_per_day = total_fdp_min / trip_len if trip_len > 0 else 0
     
     # Penalty for high daily FDP
-    fdp_penalty = max(0, (fdp_per_day - 8 * 60)) / 60 * 5
+    fdp_penalty = max(0, (fdp_per_day - 8 * 60)) / 60 * 20
 
     # Penalty for wildly uneven FDPs across days
     fdp_variance_penalty = 0

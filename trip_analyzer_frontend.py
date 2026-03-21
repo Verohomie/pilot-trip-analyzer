@@ -10,8 +10,8 @@ import sys
 import re
 import glob
 import calendar
-
-from flask import Flask, request, jsonify, send_file, make_response
+from flask import Flask, request, jsonify, send_file, make_response, Response
+from werkzeug.utils import secure_filename
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from trip_analyzer import (
@@ -23,7 +23,23 @@ from trip_analyzer import (
 
 app = Flask(__name__)
 HERE = os.path.dirname(os.path.abspath(__file__))
-CSV_DIR = os.path.join(HERE, 'CSVs')
+CSV_DIR = os.environ.get('CSV_DIR', os.path.join(HERE, 'CSVs'))
+
+# ── Basic Auth ────────────────────────────────────────────────────────────
+_APP_USER = os.environ.get('APP_USER', '')
+_APP_PASS = os.environ.get('APP_PASS', '')
+
+@app.before_request
+def check_auth():
+    if request.endpoint == 'health':
+        return  # health check is always open
+    if _APP_USER and _APP_PASS:
+        auth = request.authorization
+        if not auth or auth.username != _APP_USER or auth.password != _APP_PASS:
+            return Response(
+                'Authentication required', 401,
+                {'WWW-Authenticate': 'Basic realm="Trip Analyzer"'}
+            )
 
 
 def find_csv(suffix):
@@ -33,6 +49,41 @@ def find_csv(suffix):
     if not matches:
         matches = glob.glob(os.path.join(CSV_DIR, f'*_{suffix.upper()}.csv'))
     return matches[0] if matches else None
+
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/upload_csv', methods=['POST'])
+def upload_csv():
+    files = request.files.getlist('files')
+    if len(files) != 3:
+        return jsonify(ok=False, error='Send exactly 3 CSV files (trips, legs, layovers)'), 400
+
+    allowed = {'trips', 'legs', 'layovers'}
+    # Validate names first before touching the filesystem
+    file_map = {}  # suffix -> (file_object, sanitized_name)
+    for f in files:
+        name = secure_filename(f.filename)
+        m = re.match(r'^(.+)_(trips|legs|layovers)\.csv$', name, re.IGNORECASE)
+        if not m:
+            return jsonify(ok=False,
+                           error=f'Bad filename "{name}". Expected PREFIX_trips/legs/layovers.csv'), 400
+        suffix = m.group(2).lower()
+        file_map[suffix] = (f, name)
+
+    if file_map.keys() != allowed:
+        return jsonify(ok=False, error='Need one trips, one legs, and one layovers file'), 400
+
+    os.makedirs(CSV_DIR, exist_ok=True)
+    for f, name in file_map.values():
+        f.save(os.path.join(CSV_DIR, name.upper()))
+
+    trips_name = file_map['trips'][1]
+    bid_period = re.match(r'^(.+)_trips\.csv$', trips_name, re.IGNORECASE).group(1).upper()
+    return jsonify(ok=True, bid_period=bid_period)
 
 
 @app.route('/')
@@ -180,6 +231,8 @@ def analyze():
 
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5050))
+    debug = os.environ.get('FLASK_ENV') != 'production'
     print("\n  ✈  Pilot Trip Analyzer — Web UI")
-    print("  Open: http://localhost:5050\n")
-    app.run(debug=True, port=5050)
+    print(f"  Open: http://localhost:{port}\n")
+    app.run(debug=debug, host='0.0.0.0', port=port)

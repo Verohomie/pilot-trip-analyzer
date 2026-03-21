@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: trip-analyzer
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn trip_analyzer_frontend:app --bind 0.0.0.0:$PORT
+    plan: starter
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: CSV_DIR
+        value: /data/CSVs
+      - key: APP_USER
+        generateValue: false   # set manually in Render dashboard
+      - key: APP_PASS
+        generateValue: false   # set manually in Render dashboard
+    disk:
+      name: csv-storage
+      mountPath: /data/CSVs
+      sizeGB: 1
