@@ -56,6 +56,13 @@ def health():
     return jsonify({'status': 'ok'})
 
 
+@app.route('/debug_files')
+def debug_files():
+    import glob as _glob
+    files = _glob.glob(os.path.join(CSV_DIR, '*'))
+    return jsonify({'csv_dir': CSV_DIR, 'files': files})
+
+
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
     try:
