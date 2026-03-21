@@ -58,32 +58,37 @@ def health():
 
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
-    files = request.files.getlist('files')
-    if len(files) != 3:
-        return jsonify(ok=False, error='Send exactly 3 CSV files (trips, legs, layovers)'), 400
+    try:
+        files = request.files.getlist('files')
+        if len(files) != 3:
+            return jsonify(ok=False, error='Send exactly 3 CSV files (trips, legs, layovers)'), 400
 
-    allowed = {'trips', 'legs', 'layovers'}
-    # Validate names first before touching the filesystem
-    file_map = {}  # suffix -> (file_object, sanitized_name)
-    for f in files:
-        name = secure_filename(f.filename)
-        m = re.match(r'^(.+)_(trips|legs|layovers)\.csv$', name, re.IGNORECASE)
-        if not m:
-            return jsonify(ok=False,
-                           error=f'Bad filename "{name}". Expected PREFIX_trips/legs/layovers.csv'), 400
-        suffix = m.group(2).lower()
-        file_map[suffix] = (f, name)
+        allowed = {'trips', 'legs', 'layovers'}
+        # Validate names first before touching the filesystem
+        file_map = {}  # suffix -> (file_object, sanitized_name)
+        for f in files:
+            name = secure_filename(f.filename)
+            m = re.match(r'^(.+)_(trips|legs|layovers)\.csv$', name, re.IGNORECASE)
+            if not m:
+                return jsonify(ok=False,
+                               error=f'Bad filename "{name}". Expected PREFIX_trips/legs/layovers.csv'), 400
+            suffix = m.group(2).lower()
+            file_map[suffix] = (f, name)
 
-    if file_map.keys() != allowed:
-        return jsonify(ok=False, error='Need one trips, one legs, and one layovers file'), 400
+        if file_map.keys() != allowed:
+            return jsonify(ok=False, error='Need one trips, one legs, and one layovers file'), 400
 
-    os.makedirs(CSV_DIR, exist_ok=True)
-    for f, name in file_map.values():
-        f.save(os.path.join(CSV_DIR, name.upper()))
+        os.makedirs(CSV_DIR, exist_ok=True)
+        for f, name in file_map.values():
+            f.save(os.path.join(CSV_DIR, name.upper()))
 
-    trips_name = file_map['trips'][1]
-    bid_period = re.match(r'^(.+)_trips\.csv$', trips_name, re.IGNORECASE).group(1).upper()
-    return jsonify(ok=True, bid_period=bid_period)
+        trips_name = file_map['trips'][1]
+        bid_period = re.match(r'^(.+)_trips\.csv$', trips_name, re.IGNORECASE).group(1).upper()
+        return jsonify(ok=True, bid_period=bid_period)
+
+    except Exception as exc:
+        import traceback
+        return jsonify(ok=False, error=str(exc), traceback=traceback.format_exc()), 500
 
 
 @app.route('/')

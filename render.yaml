@@ -16,5 +16,5 @@ services:
         generateValue: false   # set manually in Render dashboard
     disk:
       name: csv-storage
-      mountPath: /data/CSVs
+      mountPath: /data
       sizeGB: 1
