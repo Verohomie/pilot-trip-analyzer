@@ -1,0 +1,1 @@
+from trip_analyzer_frontend import app

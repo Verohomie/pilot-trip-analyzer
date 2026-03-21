@@ -3,7 +3,7 @@ services:
     name: trip-analyzer
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn trip_analyzer_frontend:app --bind 0.0.0.0:$PORT
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     plan: starter
     envVars:
       - key: FLASK_ENV
