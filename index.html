@@ -306,6 +306,25 @@ header p  { color: var(--text2); font-size: 11px; margin-top: 2px; }
 }
 .filter-row input:focus { border-color: var(--accent); }
 .filter-row label { font-size: 11px; color: var(--text2); }
+.len-filter-wrap { display: flex; align-items: center; gap: 6px; }
+.len-filter-label { font-size: 11px; color: var(--text2); white-space: nowrap; }
+.len-pills { display: flex; gap: 4px; }
+.len-pill {
+  background: var(--surf);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text2);
+  cursor: pointer;
+  line-height: 1;
+}
+.len-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 .filter-row select {
   background: var(--surf);
   border: 1px solid var(--border2);
@@ -951,7 +970,7 @@ td {
     <h1>Pilot Trip Analyzer</h1>
     <p>Score and rank bid package trips by quality-of-life criteria</p>
   </div>
-  <div style="margin-left:auto; font-size:11px; color:var(--text3);">v1.2.6</div>
+  <div style="margin-left:auto; font-size:11px; color:var(--text3);">v1.2.7</div>
   <div style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-left:auto;">
     <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);">Display Mode</span>
     <label class="theme-toggle" title="Toggle light/dark theme" style="margin-left:0;">
@@ -1073,16 +1092,17 @@ td {
     <!-- Filter row -->
     <div class="filter-row">
       <input type="text" id="filterInput" placeholder="Filter by trip #, operates on…" oninput="applyFilter()">
-      <label>Length:
-        <select id="filterLen" onchange="applyFilter()">
-          <option value="">All</option>
-          <option value="1">1-day</option>
-          <option value="2">2-day</option>
-          <option value="3">3-day</option>
-          <option value="4">4-day</option>
-          <option value="5">5-day</option>
-        </select>
-      </label>
+      <div class="len-filter-wrap">
+        <span class="len-filter-label">Length:</span>
+        <div class="len-pills" id="lenPills">
+          <button class="len-pill active" data-val="">All</button>
+          <button class="len-pill" data-val="1">1d</button>
+          <button class="len-pill" data-val="2">2d</button>
+          <button class="len-pill" data-val="3">3d</button>
+          <button class="len-pill" data-val="4">4d</button>
+          <button class="len-pill" data-val="5">5d</button>
+        </div>
+      </div>
       <label>LLV:
         <select id="filterLlv" onchange="applyFilter()">
           <option value="">All</option>
@@ -1928,13 +1948,11 @@ function renderResults(data) {
 
   // Info row
   const llvStr = llv_thresholds ? Object.entries(llv_thresholds).map(([n,v])=>`${n}D≥${v}`).join('  ') : '';
-  const filesStr = data.files ? Object.values(data.files).join('  ·  ') : '';
   document.getElementById('infoRow').innerHTML = `
     <span>Bid period: <b>${bid_period_label}</b></span>
     <span>LLV: <b>${llv}</b></span>
     <span>Days off: <b>${days_off || 'None'}</b></span>
     <span style="color:var(--text3)">${llvStr}</span>
-    ${filesStr ? `<span style="margin-left:auto;color:var(--text3);font-size:10px">${filesStr}</span>` : ''}
   `;
 
   // Tab counts
@@ -1989,11 +2007,43 @@ function sortBy(col) {
 }
 
 // ── Filter & render table ──────────────────────────────────────────
+// ── Length pill multi-select ────────────────────────────────────────
+document.getElementById('lenPills').addEventListener('click', e => {
+  const pill = e.target.closest('.len-pill');
+  if (!pill) return;
+  const val = pill.dataset.val;
+  if (val === '') {
+    // All — clear all specific selections
+    document.querySelectorAll('#lenPills .len-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+  } else {
+    // Deactivate "All" pill
+    document.querySelector('#lenPills .len-pill[data-val=""]').classList.remove('active');
+    pill.classList.toggle('active');
+    // If nothing selected, fall back to All
+    const anyActive = [...document.querySelectorAll('#lenPills .len-pill[data-val]')]
+      .filter(p => p.dataset.val !== '' && p.classList.contains('active'));
+    if (anyActive.length === 0) {
+      document.querySelector('#lenPills .len-pill[data-val=""]').classList.add('active');
+    }
+  }
+  applyFilter();
+});
+
+function getSelectedLengths() {
+  const allPill = document.querySelector('#lenPills .len-pill[data-val=""]');
+  if (allPill && allPill.classList.contains('active')) return null; // no filter
+  return new Set(
+    [...document.querySelectorAll('#lenPills .len-pill.active')]
+      .map(p => parseInt(p.dataset.val))
+  );
+}
+
 function applyFilter() {
   if (!allData) return;
   const { scored } = allData;
   const text = document.getElementById('filterInput').value.toLowerCase();
-  const lenF = document.getElementById('filterLen').value;
+  const lenF = getSelectedLengths();
   const llvF = document.getElementById('filterLlv').value;
 
   // Source rows for this tab
@@ -2006,7 +2056,7 @@ function applyFilter() {
     s.trip_number.toLowerCase().includes(text) ||
     (s.operates_on || '').toLowerCase().includes(text)
   );
-  if (lenF)  rows = rows.filter(s => s.trip_length === parseInt(lenF));
+  if (lenF)  rows = rows.filter(s => lenF.has(s.trip_length));
   if (llvF === 'yes') rows = rows.filter(s => s.meets_llv);
   if (llvF === 'no')  rows = rows.filter(s => !s.meets_llv);
   if (opFilterDates.size > 0) rows = rows.filter(s => {
@@ -2115,31 +2165,8 @@ function insertBreakdown(tr, s, scoreKey) {
   const displayScore = s[scoreKey];
 
   // Each entry: [display label, tooltip title, tooltip body, tooltip calc note]
+  // Order matches the Weights flyout menu order.
   const LABELS = {
-    length: [
-      'Trip length bonus/penalty',
-      'Trip Length Bonus / Penalty',
-      'Shorter trips are preferred — they give more scheduling flexibility and reduce time away from home.',
-      '1-day: −40 pts &nbsp;|&nbsp; 2-day: −20 pts &nbsp;|&nbsp; 3-day: 0 pts &nbsp;|&nbsp; 4-day: +20 pts &nbsp;|&nbsp; 5-day: +40 pts',
-    ],
-    LLV_threshold: [
-      'LLV threshold bonus',
-      'LLV Threshold Bonus',
-      'Rewards trips that carry enough credit to hit your Low Line Value target. A trip "meets the threshold" if its credit ≥ LLV ÷ days-worked target per trip length.',
-      'Meets threshold: −20 pts &nbsp;|&nbsp; Below threshold: 0 pts',
-    ],
-    tafb_relative: [
-      'TAFB relative position',
-      'TAFB Relative Position',
-      'Within each trip-length group, trips with shorter time away from base score better. The bonus/penalty spans ±20 pts across the full TAFB range seen in the bid package for that trip length.',
-      'Best (shortest TAFB): −20 pts &nbsp;↔&nbsp; Worst (longest TAFB): +20 pts',
-    ],
-    fdp: [
-      'FDP penalty',
-      'Flight Duty Period Penalty',
-      'Penalizes trips with long or uneven duty days. A high average FDP means less rest between legs. Uneven FDPs across days (e.g. one brutal day, one easy day) add a variance penalty.',
-      'Avg FDP &gt; 8 hrs: +20 pts/hr over 8 &nbsp;|&nbsp; Variance: +2 pts per std-dev hr',
-    ],
     early_flying: [
       'Early flying penalty',
       'Early Flying Penalty',
@@ -2176,11 +2203,35 @@ function insertBreakdown(tr, s, scoreKey) {
       'Penalizes layovers that arrive late at night (disrupting sleep) and layovers in eastern time zones (where early-morning departures next day hit harder on your body clock).',
       'Late arrival at layover (past midnight MT): +25 pts each &nbsp;|&nbsp; Eastern-timezone layover city: +5 pts each',
     ],
+    fdp: [
+      'FDP penalty',
+      'Flight Duty Period Penalty',
+      'Penalizes trips with long or uneven duty days. A high average FDP means less rest between legs. Uneven FDPs across days (e.g. one brutal day, one easy day) add a variance penalty.',
+      'Avg FDP &gt; 8 hrs: +20 pts/hr over 8 &nbsp;|&nbsp; Variance: +2 pts per std-dev hr',
+    ],
+    length: [
+      'Trip length bonus/penalty',
+      'Trip Length Bonus / Penalty',
+      'Shorter trips are preferred — they give more scheduling flexibility and reduce time away from home.',
+      '1-day: −40 pts &nbsp;|&nbsp; 2-day: −20 pts &nbsp;|&nbsp; 3-day: 0 pts &nbsp;|&nbsp; 4-day: +20 pts &nbsp;|&nbsp; 5-day: +40 pts',
+    ],
+    LLV_threshold: [
+      'LLV threshold bonus',
+      'LLV Threshold Bonus',
+      'Rewards trips that carry enough credit to hit your Low Line Value target. A trip "meets the threshold" if its credit ≥ LLV ÷ days-worked target per trip length.',
+      'Meets threshold: −20 pts &nbsp;|&nbsp; Below threshold: 0 pts',
+    ],
     real_credit_bonus: [
       'Real credit bonus',
       'Real Credit Bonus',
       'Real credit is pay above the minimum guarantee — essentially free money. Trips with more real credit are actively rewarded with a score reduction.',
       '−5 pts per hour of real credit (r.cr hrs × 5)',
+    ],
+    tafb_relative: [
+      'TAFB relative position',
+      'TAFB Relative Position',
+      'Within each trip-length group, trips with shorter time away from base score better. The bonus/penalty spans ±20 pts across the full TAFB range seen in the bid package for that trip length.',
+      'Best (shortest TAFB): −20 pts &nbsp;↔&nbsp; Worst (longest TAFB): +20 pts',
     ],
     deadhead: [
       'Dead head penalty',
