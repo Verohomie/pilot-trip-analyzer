@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+__version__ = "1.2.9"
 """
 Pilot Trip Analyzer
 ===================
@@ -138,6 +139,8 @@ def launch_weight_gui(defaults: dict) -> dict:
             font-size: 14px; cursor: pointer; font-weight: 600; }}
   .btn-reset {{ background: #e8ecf2; color: #333; }}
   .btn-reset:hover {{ background: #d8dce6; }}
+  .btn-zero {{ background: #fde8e8; color: #b00; }}
+  .btn-zero:hover {{ background: #f5c6c6; }}
   #status {{ text-align: center; padding: 8px; font-size: 13px; color: #2a5298;
              display: none; flex-shrink: 0; }}
 </style>
@@ -154,6 +157,7 @@ def launch_weight_gui(defaults: dict) -> dict:
   <div class="sliders">{slider_rows}</div>
   <div id="status">Running analysis...</div>
   <div class="footer">
+    <button class="btn-zero" onclick="zeroAll()">Zero All</button>
     <button class="btn-reset" onclick="reset()">Reset to Default</button>
   </div>
 </div>
@@ -172,6 +176,12 @@ function reset() {{
   for (const [k, v] of Object.entries(defaults)) {{
     const el = document.getElementById(k);
     if (el) {{ el.value = v; upd(k); }}
+  }}
+}}
+function zeroAll() {{
+  for (const [k] of Object.entries(defaults)) {{
+    const el = document.getElementById(k);
+    if (el) {{ el.value = 0; upd(k); }}
   }}
 }}
 function run() {{
