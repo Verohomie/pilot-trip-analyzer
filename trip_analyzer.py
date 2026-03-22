@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-__version__ = "1.2.9"
+__version__ = "1.2.10"
 """
 Pilot Trip Analyzer
 ===================
@@ -66,7 +66,7 @@ import datetime
 WEIGHT_KEYS = [
     ('early_flying',   'Early Flying Penalty'),
     ('late_flying',    'Late Flying Penalty'),
-    ('legs',           'Legs Per Day'),
+    ('legs',           'Legs per day bonus/penalty'),
     ('sit',            'Sit Time'),
     ('weekend',        'Weekend Penalty'),
     ('circadian',      'Circadian / Layover'),
@@ -817,16 +817,22 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
             late_hrs = (last_arr_mtn - 1200) / 60  # uncapped
             late_flying_penalty += late_hrs * 5  # 5 pts/hr per day
 
-    # ── 8. Legs per day ───────────────────────────────────────
-    num_days = len(day_groups) if day_groups else 1
-    free_per_day = 2 if num_days == 1 else 1
+    # ── 8. Legs per day bonus/penalty ─────────────────────────
+    # 1-leg day (multi-day trip) = -10; 2-leg day = -10; 3-leg = +10, 4-leg = +20, etc.
     legs_penalty = 0
+    is_multi_day = len(day_groups) > 1
     for _, _dlegs in day_groups.items():
         dc = len(_dlegs)
-        if dc == 1:
-            legs_penalty -= 10   # bonus: single-leg day
+        if is_multi_day:
+            if dc == 1:
+                legs_penalty -= 10
+            else:
+                legs_penalty += (dc - 1) * 10
         else:
-            legs_penalty += max(0, dc - free_per_day) * 10
+            if dc == 2:
+                legs_penalty -= 10
+            elif dc >= 3:
+                legs_penalty += (dc - 2) * 10
 
     # ── 9. SIT times ──────────────────────────────────────────
     sit_penalty = 0
@@ -1062,8 +1068,8 @@ def print_results(scored: list, llv_min: int, days_off_str: str, bid_period_labe
 
     # Group by weekend flag: trips with any weekday operating dates first, then any trip touching a weekend.
     # A trip with mixed dates (some weekday, some weekend) appears in BOTH groups.
-    weekday = sorted([s for s in scored if s['operates_on_weekday'] != '—'], key=lambda x: x['score'])
-    on_weekend = sorted([s for s in scored if s['flies_on_weekend']], key=lambda x: x['score_weekend'])
+    weekday = sorted([s for s in scored if s['operates_on_weekday'] != '—'], key=lambda x: (x['score'], x['trip_length']))
+    on_weekend = sorted([s for s in scored if s['flies_on_weekend']], key=lambda x: (x['score_weekend'], x['trip_length']))
 
     groups = [
         ("WEEKDAY TRIPS  (no weekend flying)", weekday, 'weekday'),
@@ -1143,19 +1149,27 @@ def print_score_breakdown(trip_number: str, trips: dict, legs: dict, layovers: d
     # Per-day legs breakdown
     day_groups_detail = get_trip_day_legs(trip_number, legs)
     if day_groups_detail:
-        print(f"\n  Legs Per Day Breakdown:")
+        print(f"\n  Legs Per Day Bonus/Penalty:")
         total_leg_pen = 0
+        is_multi_day_detail = len(day_groups_detail) > 1
         for dk in sorted(day_groups_detail.keys()):
             dlegs = day_groups_detail[dk]
-            non_dh = [l for l in dlegs if l['is_deadhead'] == 'False']
-            dh     = [l for l in dlegs if l['is_deadhead'] == 'True']
-            n = len(non_dh)
-            extra = max(0, n - 2) if len(day_groups_detail) == 1 else max(0, n - 1)
-            day_pen = (extra * 10) + len(dh) * 10
+            dc = len(dlegs)
+            if is_multi_day_detail:
+                if dc == 1:
+                    day_pen = -10
+                else:
+                    day_pen = (dc - 1) * 10
+            else:
+                if dc == 2:
+                    day_pen = -10
+                elif dc >= 3:
+                    day_pen = (dc - 2) * 10
+                else:
+                    day_pen = 0
             total_leg_pen += day_pen
-            dh_note = f"  +{len(dh)} DH" if dh else ""
-            pen_note = f"  → {day_pen} pts" if day_pen > 0 else "  → 0 pts"
-            print(f"    Day {dk}: {n} non-DH leg{'s' if n != 1 else ''}{dh_note}{pen_note}")
+            pen_note = f"  → {'+' if day_pen > 0 else ''}{day_pen} pts"
+            print(f"    Day {dk}: {dc} leg{'s' if dc != 1 else ''}{pen_note}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1171,7 +1185,7 @@ SCORE_LABELS = {
 
     'early_flying':      'Early flying penalty',
     'late_flying':       'Late flying penalty',
-    'legs':              'Legs per day',
+    'legs':              'Legs per day bonus/penalty',
     'sit':               'Sit Penalty',
     'weekend':           'Weekend penalty',
     'circadian':         'Circadian / layover timing',
@@ -1214,8 +1228,8 @@ def export_score_details(scored, path, llv_min, days_off_str, bid_period_label,
     out.append(f'  Score: lower = better  |  [HIGH] components drive the score up\n')
     out.append('\n')
 
-    weekday = sorted([s for s in scored if s['operates_on_weekday'] != '—'], key=lambda x: x['score'])
-    on_weekend = sorted([s for s in scored if s['flies_on_weekend']], key=lambda x: x['score_weekend'])
+    weekday = sorted([s for s in scored if s['operates_on_weekday'] != '—'], key=lambda x: (x['score'], x['trip_length']))
+    on_weekend = sorted([s for s in scored if s['flies_on_weekend']], key=lambda x: (x['score_weekend'], x['trip_length']))
     groups = [
         ('WEEKDAY TRIPS  (no weekend flying)', weekday, 'weekday'),
         ('TRIPS WITH WEEKEND FLYING  (including mixed weekday/weekend)', on_weekend, 'weekend'),
@@ -1249,16 +1263,24 @@ def export_score_details(scored, path, llv_min, days_off_str, bid_period_label,
             out.append(f'  Total legs   : {s["total_legs"]}  (avg {s["avg_daily_legs"]:.1f}/day)\n')
             # Per-day legs penalty breakdown
             legs_detail_parts = []
+            is_multi_day_export = len(day_groups) > 1
             for dk in sorted(day_groups.keys()):
                 dlegs = day_groups[dk]
-                non_dh = [l for l in dlegs if l['is_deadhead'] == 'False']
-                dh     = [l for l in dlegs if l['is_deadhead'] == 'True']
-                n = len(non_dh)
-                extra = max(0, n - 2) if len(day_groups) == 1 else max(0, n - 1)
-                day_pen = (extra * 10) + len(dh) * 10
-                dh_note = f'+{len(dh)}DH' if dh else ''
-                legs_detail_parts.append(f'D{dk}:{n}{"/" + dh_note if dh_note else ""}={day_pen}pts')
-            out.append(f'  Legs penalty : {s["_breakdown"].get("legs", 0.0):.0f} pts  [{", ".join(legs_detail_parts)}]\n')
+                dc = len(dlegs)
+                if is_multi_day_export:
+                    if dc == 1:
+                        day_pen = -10
+                    else:
+                        day_pen = (dc - 1) * 10
+                else:
+                    if dc == 2:
+                        day_pen = -10
+                    elif dc >= 3:
+                        day_pen = (dc - 2) * 10
+                    else:
+                        day_pen = 0
+                legs_detail_parts.append(f'D{dk}:{dc}legs={("+" if day_pen > 0 else "")}{day_pen}pts')
+            out.append(f'  Legs bonus/penalty: {s["_breakdown"].get("legs", 0.0):.0f} pts  [{", ".join(legs_detail_parts)}]\n')
             # out.append(f'  LLV effic.   : {s["efficiency_ratio"]:.2f}x target\n')  # LLV efficiency disabled
 
             out.append('\n')
@@ -1767,8 +1789,8 @@ def main():
             s['score'] = round(s['score'] + tafb_relative, 1)
             s['_breakdown']['tafb_relative'] = tafb_relative
 
-    # Assign global rank (lower score = rank 1 = best)
-    for rank_i, s in enumerate(sorted(scored, key=lambda x: x['score']), 1):
+    # Assign global rank (lower score = rank 1 = best; ties broken by shortest trip length)
+    for rank_i, s in enumerate(sorted(scored, key=lambda x: (x['score'], x['trip_length'])), 1):
         s['rank'] = rank_i
 
     # Print results
