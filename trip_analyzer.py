@@ -751,8 +751,7 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
     threshold_min = trip_len * (llv_min / _llv_d)
     meets_llv_threshold = total_credit_min >= threshold_min
 
-    # -20 pt bonus only for trips that meet the LLV threshold
-    surplus_bonus = -20 if meets_llv_threshold else 0
+    surplus_bonus = 0  # LLV bonus removed; meets_llv_threshold kept for ✓ mark
 
     # ── 5. TAFB (Time Away From Base) ─────────────────────────
     tafb_min = hhmm_to_min(trip['tafb'])
@@ -810,10 +809,14 @@ def score_trip(trip_number: str, trips: dict, legs: dict, layovers: dict,
 
     # ── 8. Legs per day ───────────────────────────────────────
     num_days = len(day_groups) if day_groups else 1
-    if num_days == 1 and len(all_legs_list) <= 2:
-        legs_penalty = 0
-    else:
-        legs_penalty = (len(all_legs_list) / num_days) * 10
+    free_per_day = 2 if num_days == 1 else 1
+    legs_penalty = 0
+    for _, _dlegs in day_groups.items():
+        dc = len(_dlegs)
+        if dc == 1:
+            legs_penalty -= 10   # bonus: single-leg day
+        else:
+            legs_penalty += max(0, dc - free_per_day) * 10
 
     # ── 9. SIT times ──────────────────────────────────────────
     sit_penalty = 0
